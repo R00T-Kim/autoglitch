@@ -1,7 +1,7 @@
 """Strict configuration schema and validation helpers."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -255,7 +255,7 @@ class AutoglitchConfig(_BaseStrictModel):
 
 def parse_autoglitch_config(config: Dict[str, Any]) -> AutoglitchConfig:
     """Parse and return strongly-typed AUTOGTLICH configuration."""
-    return AutoglitchConfig.model_validate(config)
+    return cast(AutoglitchConfig, AutoglitchConfig.model_validate(config))
 
 
 def validate_autoglitch_config(config: Dict[str, Any]) -> List[str]:
