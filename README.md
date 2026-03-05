@@ -1,7 +1,7 @@
 # AUTOGLITCH
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#설치)
-[![Tests](https://img.shields.io/badge/Tests-40%20passed-brightgreen)](#품질-확인)
+[![CI](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml)
 [![Mode](https://img.shields.io/badge/Hardware-mock%20%7C%20serial-orange)](#운영-예시)
 
 AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워크입니다.  
