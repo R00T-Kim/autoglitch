@@ -61,27 +61,47 @@ python -m src.cli run \
 python -m src.cli run --target stm32f3 --trials 200
 ```
 
-## 3) 재현성 캠페인
+## 3) HIL preflight (serial 권장)
+```bash
+python -m src.cli hil-preflight \
+  --target stm32f3 \
+  --hardware serial \
+  --serial-port /dev/ttyUSB0
+
+# 임계값 override
+python -m src.cli hil-preflight \
+  --target stm32f3 \
+  --hardware serial \
+  --serial-port /dev/ttyUSB0 \
+  --probe-trials 50 \
+  --max-timeout-rate 0.03 \
+  --max-reset-rate 0.08 \
+  --max-p95-latency-s 0.4
+```
+
+## 4) 재현성 캠페인
 ```bash
 python -m src.cli run --template experiments/configs/repro_stm32f3.yaml
 python -m src.cli run --template experiments/configs/repro_esp32.yaml
 ```
 
-## 4) 실장비 단일 실행 (serial)
+## 5) 실장비 단일 실행 (serial)
 ```bash
 python -m src.cli run \
   --template experiments/configs/soak_hil_stm32f3.yaml \
   --hardware serial \
   --serial-port /dev/ttyUSB0 \
+  --require-preflight \
   --trials 300
 ```
 
-## 5) 실장비 soak 모드
+## 6) 실장비 soak 모드
 ```bash
 python -m src.cli soak \
   --template experiments/configs/soak_hil_stm32f3.yaml \
   --hardware serial \
   --serial-port /dev/ttyUSB0 \
+  --require-preflight \
   --duration-minutes 120 \
   --batch-trials 200
 
@@ -90,6 +110,7 @@ python -m src.cli soak \
   --template experiments/configs/soak_hil_stm32f3.yaml \
   --hardware serial \
   --serial-port /dev/ttyUSB0 \
+  --require-preflight \
   --batch-trials 200 \
   --max-batches 20 \
   --resume
@@ -112,12 +133,13 @@ python -m src.cli soak \
   --continue-on-error
 ```
 
-## 6) 큐 기반 다중 작업 실행
+## 7) 큐 기반 다중 작업 실행
 ```bash
-python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml
+python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --require-preflight
 # 중단 후 재개
 python -m src.cli queue-run \
   --queue experiments/configs/queue_hil.yaml \
+  --require-preflight \
   --resume \
   --checkpoint-file experiments/results/queue_checkpoint_hil.json
 
@@ -140,7 +162,7 @@ jobs:
 > `hardware: serial` 환경에서 병렬 워커는 기본 차단된다.
 > 필요 시 `--allow-parallel-serial`을 명시해 수동으로 해제한다.
 
-## 7) BO vs RL-lite 비교
+## 8) BO vs RL-lite 비교
 ```bash
 python -m src.cli benchmark \
   --template experiments/configs/repro_stm32f3.yaml \
@@ -150,7 +172,7 @@ python -m src.cli benchmark \
   --trials 200
 ```
 
-## 8) 로그 재생/검증
+## 9) 로그 재생/검증
 ```bash
 python -m src.cli replay \
   --log experiments/logs/<run_id>.jsonl \
@@ -165,9 +187,14 @@ python -m src.cli replay \
 - Benchmark comparison: `experiments/results/comparison_*.json`
 - Queue summary: `experiments/results/queue_*.json`
 - Soak summary: `experiments/results/soak_*.json`
+- HIL preflight summary: `experiments/results/hil_preflight_*.json`
 
 ### Campaign summary(v4) 핵심 필드
 - `runtime.total_seconds`, `runtime.throughput_trials_per_second`
 - `latency.mean_seconds`, `latency.p95_seconds`, `latency.max_seconds`
 - `pareto_front` (signal score vs response latency 비지배 해)
 - `optimizer_runtime` (optimizer telemetry snapshot)
+
+## PR/Release 게이트
+- PR 머지 전 필수: `CI`, `CodeQL`, `Semgrep` 모두 green
+- serial HIL 작업은 `hil-preflight` 통과 후 `--require-preflight`로 실행 권장

@@ -25,9 +25,9 @@ from .observer import BasicObserver
 from .optimizer import BayesianOptimizer, RLOptimizer, SB3Optimizer
 from .orchestrator import ExperimentOrchestrator
 from .plugins import PluginRegistry
-from .runtime import RecoveryExecutor
+from .runtime import HilPreflightThresholds, RecoveryExecutor, run_hil_preflight
 from .safety import SafetyController
-from .types import ExploitPrimitiveType
+from .types import ExploitPrimitiveType, GlitchParameters
 
 logger = logging.getLogger(__name__)
 
@@ -77,6 +77,10 @@ def main() -> None:
         _replay_run(args)
         return
 
+    if args.command == "hil-preflight":
+        _hil_preflight_cmd(args)
+        return
+
     parser.print_help()
 
 
@@ -101,6 +105,11 @@ def _build_parser() -> argparse.ArgumentParser:
     queue.add_argument("--config-mode", choices=["strict", "legacy"], default=None)
     queue.add_argument("--serial-io", choices=["sync", "async"], default=None)
     queue.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    queue.add_argument(
+        "--require-preflight",
+        action="store_true",
+        help="require serial HIL preflight pass before each queue job",
+    )
     queue.add_argument(
         "--checkpoint-file",
         default=None,
@@ -181,6 +190,7 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--serial-timeout", type=float, default=None)
     benchmark.add_argument("--serial-io", choices=["sync", "async"], default=None)
     benchmark.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    benchmark.add_argument("--require-preflight", action="store_true")
     benchmark.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
     benchmark.add_argument("--success-threshold", type=float, default=0.30)
     benchmark.add_argument("--plugin-dir", action="append", default=[])
@@ -188,6 +198,22 @@ def _build_parser() -> argparse.ArgumentParser:
     replay = sub.add_parser("replay", help="recompute summary from a trial JSONL log")
     replay.add_argument("--log", required=True, help="path to trial jsonl log")
     replay.add_argument("--report", default=None, help="optional report json to compare against")
+
+    preflight = sub.add_parser("hil-preflight", help="run serial HIL preflight probe")
+    preflight.add_argument("--config", default="configs/default.yaml", help="base config path")
+    preflight.add_argument("--template", default=None, help="campaign template yaml path")
+    preflight.add_argument("--target", default="stm32f3", help="target profile name")
+    preflight.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    preflight.add_argument("--hardware", choices=["mock", "serial"], default=None)
+    preflight.add_argument("--serial-port", default=None)
+    preflight.add_argument("--serial-timeout", type=float, default=None)
+    preflight.add_argument("--serial-io", choices=["sync", "async"], default=None)
+    preflight.add_argument("--probe-trials", type=int, default=None)
+    preflight.add_argument("--max-timeout-rate", type=float, default=None)
+    preflight.add_argument("--max-reset-rate", type=float, default=None)
+    preflight.add_argument("--max-p95-latency-s", type=float, default=None)
+    preflight.add_argument("--output", default=None, help="optional preflight report output path")
+    preflight.add_argument("--plugin-dir", action="append", default=[])
 
     return parser
 
@@ -212,6 +238,11 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--serial-port", default=None, help="override serial target port")
     parser.add_argument("--serial-timeout", type=float, default=None, help="override serial timeout")
     parser.add_argument("--serial-io", choices=["sync", "async"], default=None, help="serial IO mode override")
+    parser.add_argument(
+        "--require-preflight",
+        action="store_true",
+        help="require serial HIL preflight pass before campaign run",
+    )
     parser.add_argument("--rerun-count", type=int, default=None, help="repeat same campaign N times")
     parser.add_argument("--fixed-seed", type=int, default=None, help="base seed for reproducibility runs")
     parser.add_argument(
@@ -243,6 +274,13 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
     errors = _validate_runtime_config(config, mode=config_mode)
     if errors:
         raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
+
+    preflight_result: Dict[str, Any] | None = None
+    if bool(getattr(args, "require_preflight", False)):
+        preflight_result = _run_hil_preflight_for_args(args, config=config, force=True)
+        if preflight_result and not bool(preflight_result.get("valid", False)):
+            report_path = preflight_result.get("report")
+            raise SystemExit(f"HIL preflight failed. report={report_path}")
 
     plugin_registry = _load_plugin_registry(config, getattr(args, "plugin_dir", []))
 
@@ -305,6 +343,8 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
     }
     if aggregate_report_path:
         output["aggregate_report"] = aggregate_report_path
+    if preflight_result is not None:
+        output["preflight"] = preflight_result
 
     return output
 
@@ -442,6 +482,7 @@ def _queue_run(args: argparse.Namespace) -> None:
         "config_mode": getattr(args, "config_mode", None),
         "serial_io": getattr(args, "serial_io", None),
         "rl_backend": getattr(args, "rl_backend", None),
+        "require_preflight": bool(getattr(args, "require_preflight", False)),
     }
 
     checkpoint_file = _resolve_queue_checkpoint_path(args.checkpoint_file, queue_path)
@@ -584,6 +625,18 @@ def _soak_run(args: argparse.Namespace) -> None:
     if args.max_workers > 1 and _is_serial_soak(args) and not args.allow_parallel_serial:
         raise SystemExit("parallel serial soak is blocked by default; add --allow-parallel-serial to override")
 
+    soak_preflight: Dict[str, Any] | None = None
+    if bool(getattr(args, "require_preflight", False)):
+        soak_config, _ = _load_run_config(args)
+        errors = _validate_runtime_config(soak_config, mode=getattr(args, "config_mode", "strict"))
+        if errors:
+            raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
+
+        soak_preflight = _run_hil_preflight_for_args(args, config=soak_config, force=True)
+        if soak_preflight and not bool(soak_preflight.get("valid", False)):
+            report_path = soak_preflight.get("report")
+            raise SystemExit(f"HIL preflight failed. report={report_path}")
+
     start_monotonic = time.monotonic()
     end_time = (
         start_monotonic + max(0.0, args.duration_minutes) * 60.0
@@ -674,6 +727,8 @@ def _soak_run(args: argparse.Namespace) -> None:
         "runs": runs,
         "aggregate": aggregate,
     }
+    if soak_preflight is not None:
+        payload["preflight"] = soak_preflight
     report_path = _write_json_report("soak", payload)
     payload["soak_report"] = str(report_path)
     print(json.dumps(payload, indent=2, ensure_ascii=False))
@@ -751,6 +806,134 @@ def _run_benchmark(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 # Validation / Plugin / Replay
 # ---------------------------------------------------------------------------
+
+def _hil_preflight_cmd(args: argparse.Namespace) -> None:
+    config, template_name = _load_run_config(args)
+    errors = _validate_runtime_config(config, mode=args.config_mode)
+    if errors:
+        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
+
+    result = _run_hil_preflight_for_args(args, config=config, force=True)
+    if result is None:
+        payload = {
+            "schema_version": 1,
+            "template": template_name,
+            "valid": True,
+            "skipped": True,
+            "reason": "non_serial_hardware",
+        }
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return
+
+    result["template"] = template_name
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+
+    if not bool(result.get("valid", False)):
+        raise SystemExit(2)
+
+
+def _run_hil_preflight_for_args(
+    args: argparse.Namespace,
+    *,
+    config: Dict[str, Any] | None = None,
+    force: bool = False,
+) -> Dict[str, Any] | None:
+    config_payload = config or _load_run_config(args)[0]
+    hw_cfg = config_payload.get("hardware", {})
+    mode = str(args.hardware or hw_cfg.get("mode", "mock")).lower()
+    if mode != "serial":
+        return None
+
+    serial_cfg = hw_cfg.get("serial", {}) if isinstance(hw_cfg.get("serial", {}), dict) else {}
+    preflight_cfg = serial_cfg.get("preflight", {}) if isinstance(serial_cfg.get("preflight", {}), dict) else {}
+    enabled = bool(preflight_cfg.get("enabled", True))
+    if not enabled and not force:
+        return None
+
+    probe_trials = int(
+        args.probe_trials
+        if getattr(args, "probe_trials", None) is not None
+        else preflight_cfg.get("probe_trials", 30)
+    )
+    thresholds = HilPreflightThresholds(
+        max_timeout_rate=float(
+            args.max_timeout_rate
+            if getattr(args, "max_timeout_rate", None) is not None
+            else preflight_cfg.get("max_timeout_rate", 0.05)
+        ),
+        max_reset_rate=float(
+            args.max_reset_rate
+            if getattr(args, "max_reset_rate", None) is not None
+            else preflight_cfg.get("max_reset_rate", 0.10)
+        ),
+        max_p95_latency_s=float(
+            args.max_p95_latency_s
+            if getattr(args, "max_p95_latency_s", None) is not None
+            else preflight_cfg.get("max_p95_latency_s", 0.50)
+        ),
+    )
+
+    safe_params = _build_preflight_safe_params(config_payload)
+    hardware = _create_hardware(
+        args=args,
+        config=config_payload,
+        seed=int(config_payload.get("experiment", {}).get("seed", 42)),
+    )
+
+    try:
+        result = run_hil_preflight(
+            hardware=hardware,
+            safe_params=safe_params,
+            probe_trials=probe_trials,
+            thresholds=thresholds,
+            target_name=str(config_payload.get("target", {}).get("name", getattr(args, "target", "unknown"))),
+            hardware_mode=mode,
+        )
+    finally:
+        disconnect = getattr(hardware, "disconnect", None)
+        if callable(disconnect):
+            disconnect()
+
+    output_path = _resolve_preflight_output_path(getattr(args, "output", None))
+    if output_path is None:
+        output_path = _write_json_report("hil_preflight", result)
+    else:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(result, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    result["report"] = str(output_path)
+    return result
+
+
+def _build_preflight_safe_params(config: Dict[str, Any]) -> GlitchParameters:
+    params_cfg = config.get("glitch", {}).get("parameters", {})
+
+    width_cfg = params_cfg.get("width", {})
+    offset_cfg = params_cfg.get("offset", {})
+    voltage_cfg = params_cfg.get("voltage", {})
+    repeat_cfg = params_cfg.get("repeat", {})
+
+    width = (float(width_cfg.get("min", 0.0)) + float(width_cfg.get("max", 0.0))) / 2.0
+    offset = (float(offset_cfg.get("min", 0.0)) + float(offset_cfg.get("max", 0.0))) / 2.0
+    voltage_min = float(voltage_cfg.get("min", -1.0))
+    voltage_max = float(voltage_cfg.get("max", 1.0))
+    voltage = max(voltage_min, min(voltage_max, 0.0))
+    repeat = int(max(int(repeat_cfg.get("min", 1)), 1))
+
+    return GlitchParameters(
+        width=width,
+        offset=offset,
+        voltage=voltage,
+        repeat=repeat,
+        ext_offset=0.0,
+    )
+
+
+def _resolve_preflight_output_path(path: str | None) -> Path | None:
+    if path is None:
+        return None
+    return Path(path)
+
 
 def _validate_config_cmd(args: argparse.Namespace) -> None:
     config, template_name = _load_run_config(args)
@@ -1074,6 +1257,7 @@ def _build_run_namespace(options: Dict[str, Any], cli_plugin_dirs: Iterable[str]
         serial_port=options.get("serial_port"),
         serial_timeout=options.get("serial_timeout"),
         serial_io=options.get("serial_io"),
+        require_preflight=bool(options.get("require_preflight", False)),
         rerun_count=options.get("rerun_count"),
         fixed_seed=options.get("fixed_seed"),
         success_threshold=options.get("success_threshold"),
@@ -1252,6 +1436,7 @@ def _execute_soak_batch(
         serial_port=args.serial_port,
         serial_timeout=args.serial_timeout,
         serial_io=getattr(args, "serial_io", None),
+        require_preflight=False,
         rerun_count=1,
         fixed_seed=int(base_seed + batch_index),
         success_threshold=args.success_threshold,
@@ -1315,6 +1500,7 @@ def _build_soak_resume_key(args: argparse.Namespace) -> str:
         "serial_port": args.serial_port,
         "serial_timeout": args.serial_timeout,
         "serial_io": getattr(args, "serial_io", None),
+        "require_preflight": bool(getattr(args, "require_preflight", False)),
         "fixed_seed": args.fixed_seed,
         "success_threshold": args.success_threshold,
         "plugin_dir": list(args.plugin_dir),

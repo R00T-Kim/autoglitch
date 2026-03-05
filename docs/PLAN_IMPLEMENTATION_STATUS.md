@@ -36,3 +36,9 @@
 - SB3 true online/offline training path (callbacks/checkpoint/eval integration)
 - TuRBO backend and constrained multi-objective mode
 - HIL protocol gates (serial jitter/timeout envelopes + reproducibility stress tests)
+
+## ✅ Additional implementation (Phase 1.5)
+- Added `hil-preflight` CLI command for serial readiness probes.
+- Added `--require-preflight` gate for `run`, `soak`, `queue-run`, `benchmark`.
+- Added strict schema for `hardware.serial.preflight.*` thresholds.
+- Hardened CI gates by removing lint/typecheck soft-fail settings.

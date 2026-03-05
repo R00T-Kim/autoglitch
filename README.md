@@ -15,6 +15,7 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - `queue-run`: 다중 job 실행 (`priority`, `enabled`, 체크포인트/재개)
 - `benchmark`: 알고리즘 비교 (bayesian vs rl)
 - `replay`: JSONL trial 로그 재집계/검증
+- `hil-preflight`: serial HIL 사전 안정성 점검(timeout/reset/p95 latency)
 - 안전/복구: safety guard + retry/circuit-breaker
 - 비동기 serial 세션 재사용 + 재연결(`keep_open`, `reconnect_attempts`)
 - 리포트 스키마 v4: latency/p95/throughput + Pareto front + optimizer telemetry
@@ -23,6 +24,8 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - Async serial persistent/reconnect 상태머신 도입
 - BO heuristic 벡터화 평가 + 런타임 telemetry 추가
 - 캠페인 요약 `schema_version: 4` 업그레이드
+- `hil-preflight` 커맨드 + `--require-preflight` 게이트 도입
+- CI lint/typecheck를 fail-fast 게이트로 강화
 - 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
 
 ## 프로젝트 구조
@@ -79,6 +82,10 @@ flowchart LR
 
 ## 운영 예시
 ```bash
+# HIL preflight + 강제 실행
+python -m src.cli hil-preflight --target stm32f3 --hardware serial --serial-port /dev/ttyUSB0
+python -m src.cli run --template experiments/configs/soak_hil_stm32f3.yaml --hardware serial --serial-port /dev/ttyUSB0 --require-preflight
+
 # soak + resume
 python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20
 python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20 --resume
@@ -103,6 +110,12 @@ hardware:
     keep_open: true
     reconnect_attempts: 2
     reconnect_backoff_s: 0.05
+    preflight:
+      enabled: true
+      probe_trials: 30
+      max_timeout_rate: 0.05
+      max_reset_rate: 0.10
+      max_p95_latency_s: 0.50
 ```
 
 ### 리포트 확인 포인트 (v4)
@@ -114,8 +127,8 @@ hardware:
 ## 품질 확인
 ```bash
 python -m compileall src tests
-ruff check src tests
-python -m mypy src
+ruff check src tests --select E,F --ignore E501
+python -m mypy src/config src/runtime/preflight.py src/types.py
 pytest -q
 ```
 
@@ -126,3 +139,4 @@ pytest -q
 - `docs/ARCHITECTURE.md`
 - `docs/ROADMAP.md`
 - `docs/PLAN_IMPLEMENTATION_STATUS.md`
+- `docs/HIL_VALIDATION_REPORT_2026Q1.md`

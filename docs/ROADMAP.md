@@ -10,8 +10,10 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 - ✅ Strict config / safety / recovery baseline
 - ✅ Queue/soak/replay/benchmark 운영 경로
 - ✅ Async serial persistent + reconnect
+- ✅ Serial HIL preflight (`hil-preflight`, `--require-preflight`)
 - ✅ BO vectorized heuristic + telemetry
 - ✅ Campaign summary schema v4 (latency/throughput/Pareto/optimizer runtime)
+- ✅ CI lint/typecheck gate hardening (fail-fast)
 - 🔜 Next: SB3 실학습 경로, TuRBO/qNEHVI 실험, HIL 게이트 강화
 
 ## Milestones

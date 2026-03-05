@@ -51,3 +51,11 @@ python -m src.cli validate-config --target stm32f3
 - `hardware.serial.keep_open: true`로 trial 간 연결 재사용(지연 감소)
 - `reconnect_attempts`, `reconnect_backoff_s`로 일시적 UART 오류 복구
 - 장비가 불안정할 때는 `min_cooldown_s`, `max_trials_per_minute`를 함께 보수적으로 설정
+
+### HIL preflight 게이트
+- 실행: `python -m src.cli hil-preflight --hardware serial --serial-port /dev/ttyUSB0`
+- 강제 실행: `run/soak/queue-run`에 `--require-preflight` 추가
+- 기준값(기본):
+  - `hardware.serial.preflight.max_timeout_rate: 0.05`
+  - `hardware.serial.preflight.max_reset_rate: 0.10`
+  - `hardware.serial.preflight.max_p95_latency_s: 0.50`

@@ -43,3 +43,12 @@ def test_legacy_mode_keeps_backward_compatibility_for_numeric_strings() -> None:
 
     errors = validate_config(merged, mode="legacy")
     assert errors == []
+
+
+def test_strict_schema_rejects_invalid_serial_preflight_threshold() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["hardware"]["serial"]["preflight"]["max_timeout_rate"] = 1.5
+
+    errors = validate_config(config, mode="strict")
+    assert any("max_timeout_rate" in item for item in errors)

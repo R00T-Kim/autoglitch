@@ -22,6 +22,7 @@ def _base_options() -> dict:
         "hardware": "mock",
         "serial_port": None,
         "serial_timeout": None,
+        "require_preflight": False,
         "rerun_count": 1,
         "fixed_seed": 123,
         "success_threshold": 0.3,
@@ -39,6 +40,7 @@ def test_build_run_namespace_merges_plugin_dirs() -> None:
     )
 
     assert ns.plugin_dir == ["/tmp/c", "/tmp/a", "/tmp/b"]
+    assert ns.require_preflight is False
 
 
 def test_execute_campaign_returns_manifest_and_report() -> None:
@@ -181,6 +183,7 @@ def _soak_args(tmp_path: Path, **overrides) -> argparse.Namespace:
         "hardware": "mock",
         "serial_port": None,
         "serial_timeout": None,
+        "require_preflight": False,
         "fixed_seed": 100,
         "success_threshold": 0.3,
         "plugin_dir": [],
@@ -388,3 +391,48 @@ def test_soak_run_parallel_workers(tmp_path, monkeypatch, capsys) -> None:
     assert out["new_batches"] == 4
     assert out["completed_batches"] == 4
     assert out["failed_batches"] == 0
+
+
+def test_soak_run_require_preflight_executes_once(tmp_path, monkeypatch, capsys) -> None:
+    preflight_calls = {"count": 0}
+    campaign_calls = {"count": 0}
+
+    def _fake_preflight(*_args, **_kwargs):
+        preflight_calls["count"] += 1
+        return {"valid": True, "report": str(tmp_path / "hil_preflight.json")}
+
+    def _fake_execute_campaign(args: argparse.Namespace) -> dict:
+        campaign_calls["count"] += 1
+        assert args.require_preflight is False
+        return {
+            "runs": [
+                {
+                    "run_id": "run_ok",
+                    "seed": 200,
+                    "campaign_id": "campaign_1",
+                    "n_trials": 2,
+                    "success_rate": 0.5,
+                    "primitive_repro_rate": 0.5,
+                    "time_to_first_primitive": 1,
+                    "optimizer_backend": "bayesian",
+                    "circuit_breaker": {"state": "closed"},
+                    "report": "r.json",
+                    "manifest": "m.json",
+                    "log": "l.jsonl",
+                }
+            ]
+        }
+
+    monkeypatch.setattr(cli, "_run_hil_preflight_for_args", _fake_preflight)
+    monkeypatch.setattr(cli, "_load_run_config", lambda _args: ({}, None))
+    monkeypatch.setattr(cli, "_validate_runtime_config", lambda _cfg, mode="strict": [])
+    monkeypatch.setattr(cli, "_execute_campaign", _fake_execute_campaign)
+    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+
+    args = _soak_args(tmp_path, require_preflight=True, max_batches=2)
+    _soak_run(args)
+    out = json.loads(capsys.readouterr().out)
+
+    assert preflight_calls["count"] == 1
+    assert campaign_calls["count"] == 2
+    assert out["preflight"]["valid"] is True

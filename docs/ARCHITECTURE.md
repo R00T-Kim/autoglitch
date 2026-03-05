@@ -6,6 +6,7 @@
 
 - **Strict Config 계층**: `pydantic` 기반 strict schema 검증 (`--config-mode strict|legacy`)
 - **Serial I/O 모드 분리**: `sync`(기본) + `async` 옵션 (`--serial-io async`) + persistent/reconnect 상태머신
+- **HIL 사전검증 게이트**: `hil-preflight` + `--require-preflight`로 serial 안정성 확인 후 캠페인 실행
 - **RL 백엔드 선택**: `lite`(기본) + `sb3` facade (`--rl-backend sb3`)
 - **추적 고도화**: campaign summary `schema_version: 4`, latency/throughput/Pareto/optimizer telemetry 포함
 - **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리

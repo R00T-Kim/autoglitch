@@ -8,7 +8,7 @@ from __future__ import annotations
 import argparse
 import time
 from dataclasses import dataclass
-from typing import Optional, Protocol
+from typing import Protocol
 
 from ..types import GlitchParameters
 from .mock_glitch_bridge import parse_glitch_params

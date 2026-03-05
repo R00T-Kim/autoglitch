@@ -5,8 +5,9 @@
 ## 적용 현황 스냅샷 (2026-03-05)
 - ✅ Pydantic strict config 계층 적용
 - ✅ Serial async bridge + persistent/reconnect 적용
+- ✅ Serial HIL preflight + 실행 전 강제 게이트(`--require-preflight`)
 - ✅ report schema v4(throughput/latency/Pareto/optimizer telemetry) 적용
-- ✅ CodeQL/Semgrep 워크플로우 적용
+- ✅ CodeQL/Semgrep 워크플로우 + CI gate hardening 적용
 - ⏳ TuRBO / qNEHVI / SB3 full-train path는 다음 단계
 
 ## 1) 지금 바로 적용 가능한 Quick Wins

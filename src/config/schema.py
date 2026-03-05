@@ -102,11 +102,34 @@ class HardwareTargetConfig(_BaseStrictModel):
         return self
 
 
+class HardwareSerialPreflightConfig(_BaseStrictModel):
+    enabled: bool = True
+    probe_trials: int = 30
+    max_timeout_rate: float = 0.05
+    max_reset_rate: float = 0.10
+    max_p95_latency_s: float = 0.50
+
+    @model_validator(mode="after")
+    def _validate_preflight(self) -> "HardwareSerialPreflightConfig":
+        if self.probe_trials <= 0:
+            raise ValueError("probe_trials must be > 0")
+        for value, name in (
+            (self.max_timeout_rate, "max_timeout_rate"),
+            (self.max_reset_rate, "max_reset_rate"),
+        ):
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{name} must be in [0, 1]")
+        if self.max_p95_latency_s <= 0:
+            raise ValueError("max_p95_latency_s must be > 0")
+        return self
+
+
 class HardwareSerialConfig(_BaseStrictModel):
     io_mode: Literal["sync", "async"] = "sync"
     keep_open: bool = True
     reconnect_attempts: int = 2
     reconnect_backoff_s: float = 0.05
+    preflight: HardwareSerialPreflightConfig = Field(default_factory=HardwareSerialPreflightConfig)
 
     @model_validator(mode="after")
     def _validate_serial_runtime(self) -> "HardwareSerialConfig":

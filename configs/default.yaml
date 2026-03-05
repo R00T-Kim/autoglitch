@@ -45,6 +45,12 @@ hardware:
     keep_open: true
     reconnect_attempts: 2
     reconnect_backoff_s: 0.05
+    preflight:
+      enabled: true
+      probe_trials: 30
+      max_timeout_rate: 0.05
+      max_reset_rate: 0.10
+      max_p95_latency_s: 0.50
 glitch:
   parameters:
     width:
