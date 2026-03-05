@@ -46,3 +46,8 @@ python -m src.cli validate-config --target stm32f3
 - HIL에서는 `hardware: serial` + `safety` 보수적 설정
 - soak/queue 실행 전 반드시 `validate-config` 통과
 - `manifest_<run_id>.json`에 config hash/plugin snapshot을 보관해 재현성 확보
+
+### Serial async 운용 가이드
+- `hardware.serial.keep_open: true`로 trial 간 연결 재사용(지연 감소)
+- `reconnect_attempts`, `reconnect_backoff_s`로 일시적 UART 오류 복구
+- 장비가 불안정할 때는 `min_cooldown_s`, `max_trials_per_minute`를 함께 보수적으로 설정

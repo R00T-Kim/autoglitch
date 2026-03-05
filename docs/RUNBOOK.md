@@ -26,6 +26,16 @@ python -m src.cli run \
   --trials 20
 ```
 
+권장(연결 흔들림 대응) 설정:
+```yaml
+hardware:
+  serial:
+    io_mode: async
+    keep_open: true
+    reconnect_attempts: 2
+    reconnect_backoff_s: 0.05
+```
+
 ## 1.6) 라즈베리파이 GPIO 브리지 (실장비 제어)
 RPi에서:
 ```bash
@@ -149,9 +159,15 @@ python -m src.cli replay \
 
 ## 출력 산출물
 - Trial log: `experiments/logs/<run_id>.jsonl`
-- Campaign summary: `experiments/results/campaign_*_<run_id>.json`
+- Campaign summary: `experiments/results/campaign_*_<run_id>.json` (`schema_version: 4`)
 - Run manifest: `experiments/results/manifest_<run_id>.json`
 - Repro aggregate: `experiments/results/repro_*.json`
 - Benchmark comparison: `experiments/results/comparison_*.json`
 - Queue summary: `experiments/results/queue_*.json`
 - Soak summary: `experiments/results/soak_*.json`
+
+### Campaign summary(v4) 핵심 필드
+- `runtime.total_seconds`, `runtime.throughput_trials_per_second`
+- `latency.mean_seconds`, `latency.p95_seconds`, `latency.max_seconds`
+- `pareto_front` (signal score vs response latency 비지배 해)
+- `optimizer_runtime` (optimizer telemetry snapshot)

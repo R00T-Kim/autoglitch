@@ -64,3 +64,28 @@ def test_heuristic_backend_selection_is_respected() -> None:
     # 모델 학습 경로가 여러 번 호출된 뒤에도 heuristic 고정
     optimizer.suggest()
     assert optimizer.backend_in_use == "heuristic"
+
+
+def test_vectorized_heuristic_exposes_telemetry() -> None:
+    optimizer = BayesianOptimizer(
+        PARAM_SPACE,
+        seed=77,
+        n_initial=2,
+        acquisition="ei",
+        backend="heuristic",
+        candidate_pool_size=32,
+        vectorized_heuristic=True,
+    )
+
+    for _ in range(8):
+        params = optimizer.suggest()
+        optimizer.observe(params, _reward(params.width, params.offset))
+
+    _ = optimizer.suggest()
+    telemetry = optimizer.telemetry_snapshot()
+
+    assert telemetry["enabled"] is True
+    assert telemetry["vectorized_heuristic"] is True
+    assert telemetry["candidate_pool_size"] == 32
+    assert telemetry["candidate_evaluations"] >= 32
+    assert telemetry["latency_ms"]["suggest"]["count"] >= 1

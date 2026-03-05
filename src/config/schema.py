@@ -49,12 +49,14 @@ class OptimizerBOConfig(_BaseStrictModel):
     n_initial: int = 50
     acquisition: str = "ei"
     backend: Literal["auto", "heuristic", "botorch"] = "auto"
+    candidate_pool_size: int = 192
+    vectorized_heuristic: bool = True
 
-    @field_validator("n_initial")
+    @field_validator("n_initial", "candidate_pool_size")
     @classmethod
-    def _validate_n_initial(cls, value: int) -> int:
+    def _validate_positive_int(cls, value: int) -> int:
         if value <= 0:
-            raise ValueError("n_initial must be > 0")
+            raise ValueError("must be > 0")
         return value
 
 
@@ -102,6 +104,17 @@ class HardwareTargetConfig(_BaseStrictModel):
 
 class HardwareSerialConfig(_BaseStrictModel):
     io_mode: Literal["sync", "async"] = "sync"
+    keep_open: bool = True
+    reconnect_attempts: int = 2
+    reconnect_backoff_s: float = 0.05
+
+    @model_validator(mode="after")
+    def _validate_serial_runtime(self) -> "HardwareSerialConfig":
+        if self.reconnect_attempts < 0:
+            raise ValueError("reconnect_attempts must be >= 0")
+        if self.reconnect_backoff_s < 0:
+            raise ValueError("reconnect_backoff_s must be >= 0")
+        return self
 
 
 class HardwareConfig(_BaseStrictModel):

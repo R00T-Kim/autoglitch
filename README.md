@@ -16,6 +16,14 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - `benchmark`: 알고리즘 비교 (bayesian vs rl)
 - `replay`: JSONL trial 로그 재집계/검증
 - 안전/복구: safety guard + retry/circuit-breaker
+- 비동기 serial 세션 재사용 + 재연결(`keep_open`, `reconnect_attempts`)
+- 리포트 스키마 v4: latency/p95/throughput + Pareto front + optimizer telemetry
+
+## 최근 업데이트 (2026-03-05)
+- Async serial persistent/reconnect 상태머신 도입
+- BO heuristic 벡터화 평가 + 런타임 telemetry 추가
+- 캠페인 요약 `schema_version: 4` 업그레이드
+- 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
 
 ## 프로젝트 구조
 - `src/`: 오케스트레이터, optimizer, hardware, runtime, safety, CLI
@@ -82,6 +90,27 @@ python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
 
 > `serial` 타깃 병렬 실행은 기본 차단됩니다. 필요한 경우에만 `--allow-parallel-serial`을 명시하세요.
 
+### 성능 튜닝 옵션 (config)
+```yaml
+optimizer:
+  bo:
+    candidate_pool_size: 192
+    vectorized_heuristic: true
+
+hardware:
+  serial:
+    io_mode: async
+    keep_open: true
+    reconnect_attempts: 2
+    reconnect_backoff_s: 0.05
+```
+
+### 리포트 확인 포인트 (v4)
+- `runtime.throughput_trials_per_second`
+- `latency.mean_seconds / p95_seconds / max_seconds`
+- `pareto_front`
+- `optimizer_runtime`
+
 ## 품질 확인
 ```bash
 python -m compileall src tests
@@ -96,3 +125,4 @@ pytest -q
 - `docs/PLUGIN_SDK.md`
 - `docs/ARCHITECTURE.md`
 - `docs/ROADMAP.md`
+- `docs/PLAN_IMPLEMENTATION_STATUS.md`

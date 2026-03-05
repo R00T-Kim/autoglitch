@@ -32,13 +32,14 @@ class ExperimentLogger:
         campaign: CampaignResult,
         output_dir: str = "experiments/results",
         mlflow_info: Dict[str, Any] | None = None,
+        optimizer_info: Dict[str, Any] | None = None,
     ) -> Path:
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         summary_path = target_dir / f"{campaign.campaign_id}_{self.run_id}.json"
         payload: Dict[str, Any] = {
-            "schema_version": 3,
+            "schema_version": 4,
             "campaign_id": campaign.campaign_id,
             "run_id": self.run_id,
             "n_trials": campaign.n_trials,
@@ -47,6 +48,12 @@ class ExperimentLogger:
             "time_to_first_primitive": campaign.time_to_first_primitive,
             "runtime": {
                 "total_seconds": campaign.runtime_total_seconds,
+                "throughput_trials_per_second": campaign.throughput_trials_per_second,
+            },
+            "latency": {
+                "mean_seconds": campaign.latency_mean_seconds,
+                "p95_seconds": campaign.latency_p95_seconds,
+                "max_seconds": campaign.latency_max_seconds,
             },
             "error_breakdown": campaign.error_breakdown,
             "fault_distribution": {
@@ -56,7 +63,9 @@ class ExperimentLogger:
                 primitive.name: count
                 for primitive, count in campaign.primitive_distribution.items()
             },
+            "pareto_front": campaign.pareto_front,
             "config": campaign.config,
+            "optimizer_runtime": optimizer_info or {"enabled": False},
             "mlflow": mlflow_info or {"enabled": False},
         }
 

@@ -368,7 +368,12 @@ def _run_single_campaign(
     )
 
     campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
-    summary_path = logger_viz.write_campaign_summary(campaign, mlflow_info=mlflow_tracker.snapshot())
+    optimizer_telemetry = _snapshot_optimizer_telemetry(optimizer)
+    summary_path = logger_viz.write_campaign_summary(
+        campaign,
+        mlflow_info=mlflow_tracker.snapshot(),
+        optimizer_info=optimizer_telemetry,
+    )
     manifest_path = logger_viz.write_run_manifest(run_config, plugin_snapshot=plugin_registry.snapshot())
 
     mlflow_tracker.log_metrics(
@@ -395,6 +400,7 @@ def _run_single_campaign(
         "runtime_total_seconds": campaign.runtime_total_seconds,
         "error_breakdown": campaign.error_breakdown,
         "optimizer_backend": getattr(optimizer, "backend_in_use", optimizer_type),
+        "optimizer_telemetry": optimizer_telemetry,
         "circuit_breaker": recovery_executor.breaker.snapshot(),
         "mlflow": mlflow_tracker.snapshot(),
         "report": str(summary_path),
@@ -942,6 +948,8 @@ def _create_optimizer(
         n_initial=int(bo_cfg.get("n_initial", 50)),
         acquisition=str(bo_cfg.get("acquisition", "ei")),
         backend=backend,
+        candidate_pool_size=int(bo_cfg.get("candidate_pool_size", 192)),
+        vectorized_heuristic=bool(bo_cfg.get("vectorized_heuristic", True)),
     )
 
 
@@ -978,7 +986,12 @@ def _create_hardware(args: argparse.Namespace, config: Dict[str, Any], seed: int
             "trigger_command": str(hw_cfg.get("trigger_command", "")),
         }
         if serial_io == "async":
-            return AsyncSerialCommandHardware(**adapter_kwargs)
+            return AsyncSerialCommandHardware(
+                **adapter_kwargs,
+                keep_open=bool(serial_cfg.get("keep_open", True)),
+                reconnect_attempts=int(serial_cfg.get("reconnect_attempts", 2)),
+                reconnect_backoff_s=float(serial_cfg.get("reconnect_backoff_s", 0.05)),
+            )
 
         if serial_io != "sync":
             raise SystemExit(f"unsupported serial io mode: {serial_io} (expected sync or async)")
@@ -1417,6 +1430,25 @@ def _load_plugin_registry(config: Dict[str, Any], cli_plugin_dirs: Iterable[str]
     cfg_plugin_dirs = config.get("plugins", {}).get("manifest_dirs", [])
     all_dirs = [Path(path) for path in [*cfg_plugin_dirs, *cli_plugin_dirs] if path]
     return PluginRegistry.load_default(extra_dirs=all_dirs)
+
+
+def _snapshot_optimizer_telemetry(optimizer: Any) -> Dict[str, Any]:
+    snapshot = getattr(optimizer, "telemetry_snapshot", None)
+    if callable(snapshot):
+        try:
+            payload = snapshot()
+            if isinstance(payload, dict):
+                return payload
+        except Exception as exc:  # pragma: no cover - defensive fallback
+            return {
+                "enabled": False,
+                "error": str(exc),
+            }
+
+    return {
+        "enabled": False,
+        "backend_in_use": str(getattr(optimizer, "backend_in_use", type(optimizer).__name__)),
+    }
 
 
 def _validate_runtime_config(config: Dict[str, Any], mode: str = "strict") -> List[str]:

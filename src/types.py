@@ -174,6 +174,89 @@ class CampaignResult:
         return max(0.0, (end - start).total_seconds())
 
     @property
+    def response_times_seconds(self) -> List[float]:
+        values: List[float] = []
+        for trial in self.trials:
+            raw = getattr(trial.observation, "raw", None)
+            if raw is None:
+                continue
+            value = float(getattr(raw, "response_time", 0.0))
+            if value < 0:
+                continue
+            values.append(value)
+        return values
+
+    @property
+    def latency_mean_seconds(self) -> float:
+        values = self.response_times_seconds
+        if not values:
+            return 0.0
+        return float(np.mean(values))
+
+    @property
+    def latency_p95_seconds(self) -> float:
+        values = self.response_times_seconds
+        if not values:
+            return 0.0
+        return float(np.percentile(np.array(values, dtype=float), 95))
+
+    @property
+    def latency_max_seconds(self) -> float:
+        values = self.response_times_seconds
+        if not values:
+            return 0.0
+        return float(max(values))
+
+    @property
+    def throughput_trials_per_second(self) -> float:
+        runtime = self.runtime_total_seconds
+        if runtime <= 0:
+            return 0.0
+        return float(self.n_trials / runtime)
+
+    @property
+    def pareto_front(self) -> List[Dict[str, Any]]:
+        """Non-dominated trials for (maximize signal score, minimize response latency)."""
+        if not self.trials:
+            return []
+
+        candidates: List[Dict[str, Any]] = []
+        for trial in self.trials:
+            response_time = float(getattr(trial.observation.raw, "response_time", 0.0))
+            score = self._trial_signal_score(trial)
+            candidates.append(
+                {
+                    "trial_id": trial.trial_id,
+                    "fault_class": trial.fault_class.name,
+                    "primitive": trial.primitive.type.name,
+                    "confidence": float(trial.primitive.confidence),
+                    "signal_score": score,
+                    "response_time": response_time,
+                }
+            )
+
+        front: List[Dict[str, Any]] = []
+        for idx, item in enumerate(candidates):
+            dominated = False
+            for jdx, other in enumerate(candidates):
+                if idx == jdx:
+                    continue
+                if (
+                    other["signal_score"] >= item["signal_score"]
+                    and other["response_time"] <= item["response_time"]
+                    and (
+                        other["signal_score"] > item["signal_score"]
+                        or other["response_time"] < item["response_time"]
+                    )
+                ):
+                    dominated = True
+                    break
+            if not dominated:
+                front.append(item)
+
+        return sorted(front, key=lambda row: int(row["trial_id"]))
+
+    @property
     def error_breakdown(self) -> Dict[str, int]:
         """Distribution of orchestrator error categories from trial metadata."""
         dist: Dict[str, int] = {}
@@ -183,3 +266,18 @@ class CampaignResult:
                 category = str(trial.metadata.get("error_category", "none"))
             dist[category] = dist.get(category, 0) + 1
         return dist
+
+    @staticmethod
+    def _trial_signal_score(trial: TrialResult) -> float:
+        base_rewards = {
+            FaultClass.NORMAL: 0.0,
+            FaultClass.RESET: 0.1,
+            FaultClass.CRASH: 0.3,
+            FaultClass.INSTRUCTION_SKIP: 0.7,
+            FaultClass.DATA_CORRUPTION: 0.6,
+            FaultClass.AUTH_BYPASS: 1.0,
+            FaultClass.UNKNOWN: 0.05,
+        }
+        reward = base_rewards.get(trial.fault_class, 0.0)
+        reward += float(trial.primitive.confidence) * 0.5
+        return min(1.0, float(reward))

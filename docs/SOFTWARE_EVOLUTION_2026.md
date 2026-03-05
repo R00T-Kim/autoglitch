@@ -2,6 +2,13 @@
 
 외부 레퍼런스(공식 문서/공식 레포) 기반으로, 현재 코드베이스에서 **실제 효과가 큰 소프트웨어 개선 항목**을 우선순위로 정리했다.
 
+## 적용 현황 스냅샷 (2026-03-05)
+- ✅ Pydantic strict config 계층 적용
+- ✅ Serial async bridge + persistent/reconnect 적용
+- ✅ report schema v4(throughput/latency/Pareto/optimizer telemetry) 적용
+- ✅ CodeQL/Semgrep 워크플로우 적용
+- ⏳ TuRBO / qNEHVI / SB3 full-train path는 다음 단계
+
 ## 1) 지금 바로 적용 가능한 Quick Wins
 
 ### A. CI 보안/신뢰성 강화

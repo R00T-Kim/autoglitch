@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import MISSING, fields
 from typing import Any, Dict, Tuple
 
@@ -45,12 +46,14 @@ class BayesianOptimizer(BaseOptimizer):
         acquisition: str = "ei",
         backend: str = "auto",
         candidate_pool_size: int = 192,
+        vectorized_heuristic: bool = True,
     ):
         super().__init__(param_space, seed)
         self.n_initial = n_initial
         self.acquisition = acquisition.lower()
         self.backend_preference = backend.lower()
-        self.candidate_pool_size = candidate_pool_size
+        self.candidate_pool_size = max(1, int(candidate_pool_size))
+        self.vectorized_heuristic = vectorized_heuristic
 
         self._model = None
         self._rng = np.random.default_rng(seed)
@@ -63,20 +66,48 @@ class BayesianOptimizer(BaseOptimizer):
             raise ValueError("param_space must include at least one tunable parameter")
 
         self._backend_in_use = "heuristic"
+        self._model_fit_count = 0
+        self._candidate_evaluations = 0
+        self._timings: Dict[str, Dict[str, float]] = {
+            "suggest": {"count": 0.0, "total_s": 0.0, "max_s": 0.0},
+            "fit": {"count": 0.0, "total_s": 0.0, "max_s": 0.0},
+            "acquisition": {"count": 0.0, "total_s": 0.0, "max_s": 0.0},
+        }
 
     @property
     def backend_in_use(self) -> str:
         return self._backend_in_use
 
+    def telemetry_snapshot(self) -> Dict[str, Any]:
+        return {
+            "enabled": True,
+            "backend_preference": self.backend_preference,
+            "backend_in_use": self._backend_in_use,
+            "vectorized_heuristic": self.vectorized_heuristic,
+            "candidate_pool_size": self.candidate_pool_size,
+            "n_trials": self.n_trials,
+            "n_model_fits": self._model_fit_count,
+            "candidate_evaluations": self._candidate_evaluations,
+            "latency_ms": {
+                "suggest": self._latency_stats("suggest"),
+                "fit": self._latency_stats("fit"),
+                "acquisition": self._latency_stats("acquisition"),
+            },
+        }
+
     def suggest(self) -> GlitchParameters:
         """다음 파라미터 제안: 초기에는 랜덤, 이후 acquisition 기반"""
-        if self.n_trials < self.n_initial:
-            return self._random_sample()
+        started = time.perf_counter()
+        try:
+            if self.n_trials < self.n_initial:
+                return self._random_sample()
 
-        if self._model is None or self.n_trials % 10 == 0:
-            self._fit_model()
+            if self._model is None or self.n_trials % 10 == 0:
+                self._fit_model()
 
-        return self._optimize_acquisition()
+            return self._optimize_acquisition()
+        finally:
+            self._record_timing("suggest", time.perf_counter() - started)
 
     def observe(
         self,
@@ -101,21 +132,27 @@ class BayesianOptimizer(BaseOptimizer):
 
     def _fit_model(self) -> None:
         """backend 선택 후 surrogate model 학습"""
+        started = time.perf_counter()
         if not self._history:
             self._model = None
             self._backend_in_use = "heuristic"
+            self._record_timing("fit", time.perf_counter() - started)
             return
 
         if self._should_try_botorch() and len(self._history) >= max(4, len(self._search_fields) + 1):
             try:
                 self._fit_model_botorch()
                 self._backend_in_use = "botorch"
+                self._model_fit_count += 1
+                self._record_timing("fit", time.perf_counter() - started)
                 return
             except Exception as exc:  # pragma: no cover - defensive fallback
                 logger.warning("botorch backend unavailable, fallback to heuristic: %s", exc)
 
         self._fit_model_heuristic()
         self._backend_in_use = "heuristic"
+        self._model_fit_count += 1
+        self._record_timing("fit", time.perf_counter() - started)
 
     def _fit_model_heuristic(self) -> None:
         xs = np.array([self._vectorize(params) for params, _ in self._history], dtype=float)
@@ -160,19 +197,32 @@ class BayesianOptimizer(BaseOptimizer):
 
     def _optimize_acquisition(self) -> GlitchParameters:
         """Acquisition 최적화로 다음 파라미터 선택"""
-        if self._model is None:
-            return self._random_sample()
+        started = time.perf_counter()
+        try:
+            if self._model is None:
+                return self._random_sample()
 
-        if self._backend_in_use == "botorch":
-            candidate = self._optimize_acquisition_botorch()
-            if candidate is not None:
-                return candidate
+            if self._backend_in_use == "botorch":
+                candidate = self._optimize_acquisition_botorch()
+                if candidate is not None:
+                    return candidate
 
-        return self._optimize_acquisition_heuristic()
+            return self._optimize_acquisition_heuristic()
+        finally:
+            self._record_timing("acquisition", time.perf_counter() - started)
 
     def _optimize_acquisition_heuristic(self) -> GlitchParameters:
         if self._model is None or self._model.get("backend") != "heuristic":
             return self._random_sample()
+
+        if self.vectorized_heuristic:
+            vectors = self._sample_candidate_vectors(self.candidate_pool_size)
+            mus, uncertainties = self._predict_heuristic_batch(vectors)
+            scores = self._acquisition_score_batch(mus, uncertainties)
+            best_idx = int(np.argmax(scores))
+            self._candidate_evaluations += int(vectors.shape[0])
+            sampled = self._vector_to_sampled(vectors[best_idx])
+            return self._build_params(sampled)
 
         best_score = -np.inf
         best_params: GlitchParameters | None = None
@@ -182,6 +232,7 @@ class BayesianOptimizer(BaseOptimizer):
             candidate_vec = self._vectorize(candidate)
             mu, uncertainty = self._predict_heuristic(candidate_vec)
             score = self._acquisition_score(mu, uncertainty)
+            self._candidate_evaluations += 1
 
             if score > best_score:
                 best_score = score
@@ -214,23 +265,44 @@ class BayesianOptimizer(BaseOptimizer):
             return None
 
     def _predict_heuristic(self, candidate_vec: np.ndarray) -> Tuple[float, float]:
+        mus, uncertainties = self._predict_heuristic_batch(candidate_vec.reshape(1, -1))
+        return float(mus[0]), float(uncertainties[0])
+
+    def _predict_heuristic_batch(self, candidate_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         assert self._model is not None
 
         xs: np.ndarray = self._model["xs"]
         ys: np.ndarray = self._model["ys"]
-        scaled_dist = np.linalg.norm((xs - candidate_vec) / (self._model["std"] + 1e-6), axis=1)
+        std: np.ndarray = self._model["std"]
+
+        # [n_candidates, n_observations]
+        scaled_dist = np.linalg.norm(
+            (candidate_matrix[:, None, :] - xs[None, :, :]) / (std[None, None, :] + 1e-6),
+            axis=2,
+        )
 
         kernel = np.exp(-scaled_dist)
-        if np.allclose(kernel.sum(), 0.0):
-            mu = float(np.mean(ys))
-        else:
-            mu = float(np.sum(kernel * ys) / np.sum(kernel))
+        kernel_sum = kernel.sum(axis=1)
+        weighted = kernel @ ys
+        mu = np.divide(
+            weighted,
+            np.where(np.isclose(kernel_sum, 0.0), 1.0, kernel_sum),
+            out=np.full_like(weighted, float(np.mean(ys))),
+            where=~np.isclose(kernel_sum, 0.0),
+        )
 
-        nearest = float(np.min(scaled_dist))
-        uncertainty = max(0.0, min(1.0, nearest / 3.0))
-        return mu, uncertainty
+        nearest = np.min(scaled_dist, axis=1)
+        uncertainty = np.clip(nearest / 3.0, 0.0, 1.0)
+        return mu.astype(float), uncertainty.astype(float)
 
     def _acquisition_score(self, mu: float, uncertainty: float) -> float:
+        score = self._acquisition_score_batch(
+            np.array([mu], dtype=float),
+            np.array([uncertainty], dtype=float),
+        )
+        return float(score[0])
+
+    def _acquisition_score_batch(self, mu: np.ndarray, uncertainty: np.ndarray) -> np.ndarray:
         best_reward = float(self._model["best_reward"]) if self._model else 0.0
         improvement = mu - best_reward
 
@@ -238,11 +310,25 @@ class BayesianOptimizer(BaseOptimizer):
             return mu + 0.6 * uncertainty
 
         if self.acquisition == "pi":
-            temperature = max(0.05, uncertainty)
-            return float(1.0 / (1.0 + np.exp(-(improvement / temperature))))
+            temperature = np.maximum(0.05, uncertainty)
+            return 1.0 / (1.0 + np.exp(-(improvement / temperature)))
 
         # default: EI 근사 (exploit + explore)
         return improvement + 0.4 * uncertainty
+
+    def _sample_candidate_vectors(self, n_samples: int) -> np.ndarray:
+        sample_count = max(1, int(n_samples))
+        matrix = np.zeros((sample_count, len(self._search_fields)), dtype=float)
+        for idx, name in enumerate(self._search_fields):
+            lower, upper, step, is_int = self._bounds[name]
+            raw = self._rng.uniform(lower, upper, size=sample_count)
+            if step > 0:
+                raw = np.round(raw / step) * step
+            raw = np.clip(raw, lower, upper)
+            if is_int or name == "repeat":
+                raw = np.rint(raw)
+            matrix[:, idx] = raw.astype(float)
+        return matrix
 
     def _build_botorch_acquisition(self, model, best_reward: float):  # pragma: no cover - optional path
         if self.acquisition == "ucb":
@@ -291,6 +377,26 @@ class BayesianOptimizer(BaseOptimizer):
         if not _HAS_BOTORCH:
             return False
         return self.backend_preference in {"auto", "botorch"}
+
+    def _record_timing(self, key: str, elapsed_s: float) -> None:
+        stats = self._timings.get(key)
+        if stats is None:
+            return
+        stats["count"] += 1.0
+        stats["total_s"] += max(0.0, elapsed_s)
+        stats["max_s"] = max(stats["max_s"], max(0.0, elapsed_s))
+
+    def _latency_stats(self, key: str) -> Dict[str, Any]:
+        stats = self._timings.get(key, {"count": 0.0, "total_s": 0.0, "max_s": 0.0})
+        count = int(stats.get("count", 0.0))
+        total = float(stats.get("total_s", 0.0))
+        max_s = float(stats.get("max_s", 0.0))
+        mean_ms = (total / count * 1000.0) if count > 0 else 0.0
+        return {
+            "count": count,
+            "mean": mean_ms,
+            "max": max_s * 1000.0,
+        }
 
     @staticmethod
     def _build_bounds(param_space: Dict[str, Any]) -> Dict[str, Tuple[float, float, float, bool]]:
