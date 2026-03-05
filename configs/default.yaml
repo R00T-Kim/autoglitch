@@ -1,0 +1,89 @@
+config_version: 1
+defaults:
+- _self_
+- target: stm32f3
+experiment:
+  name: default
+  seed: 42
+  max_trials: 10000
+  rerun_count: 1
+  fixed_seed: null
+  success_threshold: 0.3
+optimizer:
+  type: bayesian
+  bo:
+    n_initial: 50
+    acquisition: ei
+    backend: auto
+  rl:
+    algorithm: ppo
+    learning_rate: 3e-4
+hardware:
+  mode: mock
+  glitcher:
+    type: chipwhisperer
+    port: /dev/ttyACM0
+  target:
+    type: stm32f3
+    port: /dev/ttyUSB0
+    baudrate: 115200
+    timeout: 1.0
+  oscilloscope:
+    type: none
+  serial_command_template: GLITCH width={width:.3f} offset={offset:.3f} voltage={voltage:.3f}
+    repeat={repeat:d} ext_offset={ext_offset:.3f}
+  reset_command: ''
+  trigger_command: ''
+glitch:
+  parameters:
+    width:
+      min: 0.0
+      max: 50.0
+      step: 0.1
+    offset:
+      min: 0.0
+      max: 50.0
+      step: 0.1
+    voltage:
+      min: -1.0
+      max: 1.0
+    repeat:
+      min: 1
+      max: 10
+safety:
+  width_min: 0.0
+  width_max: 50.0
+  offset_min: 0.0
+  offset_max: 50.0
+  voltage_abs_max: 1.0
+  repeat_min: 1
+  repeat_max: 10
+  min_cooldown_s: 0.0
+  max_trials_per_minute: null
+  auto_throttle: true
+plugins:
+  manifest_dirs: []
+classifier:
+  model: rule_based
+  fault_classes:
+  - normal
+  - reset
+  - crash
+  - instruction_skip
+  - data_corruption
+  - auth_bypass
+  - unknown
+logging:
+  level: INFO
+  save_waveforms: false
+  mlflow_tracking_uri: mlruns
+recovery:
+  retry:
+    max_attempts: 3
+    initial_backoff_s: 0.1
+    max_backoff_s: 1.0
+    backoff_multiplier: 2.0
+    jitter_s: 0.0
+  circuit_breaker:
+    failure_threshold: 5
+    recovery_timeout_s: 10.0

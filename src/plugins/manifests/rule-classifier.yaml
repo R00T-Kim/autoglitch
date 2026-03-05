@@ -1,0 +1,11 @@
+name: rule-classifier
+kind: classifier
+version: 1.0.0
+module: src.classifier.base
+class_name: RuleBasedClassifier
+description: Rule-based fault classifier.
+capabilities:
+  - rule-based
+supported_targets:
+  - '*'
+limits: {}

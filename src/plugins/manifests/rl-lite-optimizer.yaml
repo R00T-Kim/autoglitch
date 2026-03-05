@@ -1,0 +1,11 @@
+name: rl-lite-optimizer
+kind: optimizer
+version: 1.0.0
+module: src.optimizer.rl_optimizer
+class_name: RLOptimizer
+description: Lightweight RL optimizer.
+capabilities:
+  - rl
+supported_targets:
+  - '*'
+limits: {}

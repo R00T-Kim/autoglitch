@@ -1,0 +1,18 @@
+target:
+  name: "ESP32"
+  family: "xtensa-lx6"
+  flash_size: "4M"
+  ram_size: "520K"
+  clock_freq: 240000000
+  interface: "serial"
+  baudrate: 115200
+  reset_delay: 0.1
+  boot_delay: 0.3
+  firmware: "firmware/esp32_target.bin"
+
+hardware:
+  target:
+    type: "esp32"
+    port: "/dev/ttyUSB0"
+    baudrate: 115200
+    timeout: 1.0

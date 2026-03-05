@@ -1,0 +1,15 @@
+name: serial-command-hardware
+kind: hardware
+version: 1.0.0
+module: src.hardware.serial_hardware
+class_name: SerialCommandHardware
+description: Serial text-protocol adapter for lab targets.
+capabilities:
+  - serial
+  - live-target
+supported_targets:
+  - stm32f3
+  - esp32
+  - nrf52
+limits:
+  requires_serial_port: true

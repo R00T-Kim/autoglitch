@@ -1,0 +1,111 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "autoglitch"
+version = "0.1.0"
+description = "Autonomous Glitching + Fault-to-Primitive: automated voltage/clock fault injection with Bayesian and RL optimization"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [
+  { name = "CYAI Lab" },
+]
+keywords = ["fault-injection", "glitching", "bayesian-optimization", "reinforcement-learning", "hardware-security"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Science/Research",
+  "Topic :: Security",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.10",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+  # Signal processing / numerics
+  "numpy>=1.24",
+  "scipy>=1.11",
+  # Bayesian Optimization / ML
+  "torch>=2.1",
+  "botorch>=0.10",
+  "ax-platform>=0.3",
+  # Reinforcement Learning
+  "stable-baselines3>=2.2",
+  # Hardware communication
+  "pyserial>=3.5",
+  "pyvisa>=1.14",
+  # Classification
+  "scikit-learn>=1.3",
+  # Visualization
+  "matplotlib>=3.8",
+  "plotly>=5.18",
+  # Experiment tracking
+  "mlflow>=2.9",
+  # Configuration management
+  "pyyaml>=6.0",
+  "hydra-core>=1.3",
+  # CLI
+  "rich>=13.7",
+  "tqdm>=4.66",
+]
+
+[project.optional-dependencies]
+dev = [
+  "ruff>=0.2",
+  "mypy>=1.8",
+  "pre-commit>=3.6",
+  "jupyter>=1.0",
+  "ipykernel>=6.29",
+  "pytest>=8.0",
+  "pytest-cov>=4.1",
+]
+test = [
+  "pytest>=8.0",
+  "pytest-cov>=4.1",
+]
+
+[project.scripts]
+autoglitch = "src.cli:main"
+autoglitch-mock-bridge = "src.tools.mock_glitch_bridge:main"
+autoglitch-rpi-bridge = "src.tools.rpi_glitch_bridge:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["src*"]
+
+[tool.setuptools.package-data]
+"src.plugins" = ["manifests/*.yaml"]
+
+# ---------------------------------------------------------------------------
+# Ruff
+# ---------------------------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+src = ["src"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+# ---------------------------------------------------------------------------
+# Mypy
+# ---------------------------------------------------------------------------
+[tool.mypy]
+python_version = "3.10"
+strict = false
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_configs = true
+
+# ---------------------------------------------------------------------------
+# Pytest
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra"

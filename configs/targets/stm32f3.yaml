@@ -1,0 +1,18 @@
+target:
+  name: "STM32F303"
+  family: "cortex-m4"
+  flash_size: "256K"
+  ram_size: "48K"
+  clock_freq: 72000000
+  interface: "serial"
+  baudrate: 115200
+  reset_delay: 0.05
+  boot_delay: 0.1
+  firmware: "firmware/stm32f3_target.bin"
+
+hardware:
+  target:
+    type: "stm32f3"
+    port: "/dev/ttyUSB0"
+    baudrate: 115200
+    timeout: 1.0

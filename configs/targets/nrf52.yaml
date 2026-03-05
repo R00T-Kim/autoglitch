@@ -1,0 +1,18 @@
+target:
+  name: "nRF52832"
+  family: "cortex-m4f"
+  flash_size: "512K"
+  ram_size: "64K"
+  clock_freq: 64000000
+  interface: "serial"
+  baudrate: 115200
+  reset_delay: 0.05
+  boot_delay: 0.15
+  firmware: "firmware/nrf52_target.bin"
+
+hardware:
+  target:
+    type: "nrf52"
+    port: "/dev/ttyUSB0"
+    baudrate: 115200
+    timeout: 1.0

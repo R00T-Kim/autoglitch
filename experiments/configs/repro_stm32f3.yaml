@@ -1,0 +1,23 @@
+name: repro_stm32f3_baseline
+base_config: configs/default.yaml
+target: stm32f3
+
+experiment:
+  max_trials: 300
+  rerun_count: 5
+  fixed_seed: 100
+  success_threshold: 0.30
+
+optimizer:
+  type: bayesian
+  bo:
+    acquisition: ei
+    backend: auto
+    n_initial: 40
+
+hardware:
+  mode: mock
+
+notes:
+  - "STM32F3 기준 BO baseline reproducibility 템플릿"
+  - "실장비 사용 시 hardware.mode=serial 및 port override 필요"

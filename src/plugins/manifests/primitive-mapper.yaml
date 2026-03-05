@@ -1,0 +1,11 @@
+name: primitive-mapper
+kind: mapper
+version: 1.0.0
+module: src.mapper.mapper
+class_name: PrimitiveMapper
+description: Rule-based fault-to-primitive mapper.
+capabilities:
+  - mapping
+supported_targets:
+  - '*'
+limits: {}

@@ -1,0 +1,23 @@
+name: repro_esp32_baseline
+base_config: configs/default.yaml
+target: esp32
+
+experiment:
+  max_trials: 400
+  rerun_count: 5
+  fixed_seed: 200
+  success_threshold: 0.25
+
+optimizer:
+  type: bayesian
+  bo:
+    acquisition: ucb
+    backend: auto
+    n_initial: 60
+
+hardware:
+  mode: mock
+
+notes:
+  - "ESP32 기준 baseline reproducibility 템플릿"
+  - "serial 모드 전환 시 --serial-port로 포트 지정"

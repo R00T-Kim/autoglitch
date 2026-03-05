@@ -1,0 +1,12 @@
+name: bayesian-optimizer
+kind: optimizer
+version: 1.0.0
+module: src.optimizer.bayesian
+class_name: BayesianOptimizer
+description: Bayesian optimizer with heuristic/BoTorch backend.
+capabilities:
+  - bayesian
+  - bo
+supported_targets:
+  - '*'
+limits: {}

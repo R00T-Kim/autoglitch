@@ -1,0 +1,16 @@
+name: mock-hardware
+kind: hardware
+version: 1.0.0
+module: src.hardware.mock
+class_name: MockHardware
+description: Deterministic mock hardware adapter for local tests.
+capabilities:
+  - simulation
+  - reproducibility
+supported_targets:
+  - stm32f3
+  - esp32
+  - nrf52
+limits:
+  voltage_abs_max: 1.0
+  repeat_max: 10

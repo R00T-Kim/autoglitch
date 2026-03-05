@@ -1,0 +1,109 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Testing
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+coverage.xml
+*.cover
+*.py,cover
+htmlcov/
+.pytest_cache/
+nosetests.xml
+test-results/
+
+# Mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Ruff
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Distribution / packaging
+*.tar.gz
+*.whl
+
+# ---------------------------------------------------------------------------
+# Project-specific
+# ---------------------------------------------------------------------------
+
+# Raw data (too large for VCS)
+data/raw/
+
+# Experiment outputs
+experiments/logs/*
+!experiments/logs/.gitkeep
+experiments/results/*
+!experiments/results/.gitkeep
+
+# MLflow tracking
+mlruns/
+
+# Firmware binaries
+*.bin
+*.hex
+*.elf
+
+# Secrets / environment
+.env
+.env.*
+secrets.yaml
+secrets.yml
+
+# ChipWhisperer session / capture files
+*.cwp
+*.npy.gz
+*.trace
+
+# Serial port locks
+/var/lock/LCK..tty*
+
+# Local OMX/Codex runtime state
+.omx/
+.omc/

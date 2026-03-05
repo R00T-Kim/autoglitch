@@ -1,0 +1,21 @@
+schema_version: 1
+defaults:
+  config: configs/default.yaml
+  optimizer: bayesian
+  bo_backend: auto
+  hardware: serial
+  rerun_count: 1
+  trials: 200
+jobs:
+  - name: stm32f3_baseline
+    priority: 100
+    enabled: true
+    template: experiments/configs/soak_hil_stm32f3.yaml
+    target: stm32f3
+    serial_port: /dev/ttyUSB0
+  - name: esp32_baseline
+    priority: 90
+    enabled: true
+    template: experiments/configs/soak_hil_esp32.yaml
+    target: esp32
+    serial_port: /dev/ttyUSB0

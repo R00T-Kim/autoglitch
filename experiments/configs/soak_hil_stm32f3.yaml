@@ -1,0 +1,43 @@
+name: soak_hil_stm32f3
+base_config: configs/default.yaml
+target: stm32f3
+
+experiment:
+  max_trials: 500
+  rerun_count: 1
+  fixed_seed: 900
+  success_threshold: 0.35
+
+hardware:
+  mode: serial
+  target:
+    port: /dev/ttyUSB0
+    baudrate: 115200
+    timeout: 1.0
+
+safety:
+  width_min: 0.0
+  width_max: 45.0
+  offset_min: 0.0
+  offset_max: 45.0
+  voltage_abs_max: 0.8
+  repeat_min: 1
+  repeat_max: 8
+  min_cooldown_s: 0.02
+  max_trials_per_minute: 1200
+  auto_throttle: true
+
+recovery:
+  retry:
+    max_attempts: 4
+    initial_backoff_s: 0.05
+    max_backoff_s: 0.5
+    backoff_multiplier: 2.0
+    jitter_s: 0.01
+  circuit_breaker:
+    failure_threshold: 8
+    recovery_timeout_s: 15.0
+
+notes:
+  - HIL soak 템플릿 (STM32F3)
+  - 실장비 포트는 --serial-port로 override 가능

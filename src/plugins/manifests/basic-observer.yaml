@@ -1,0 +1,11 @@
+name: basic-observer
+kind: observer
+version: 1.0.0
+module: src.observer.collector
+class_name: BasicObserver
+description: Basic raw-result feature extractor.
+capabilities:
+  - feature-extraction
+supported_targets:
+  - '*'
+limits: {}
