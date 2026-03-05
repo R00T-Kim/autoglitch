@@ -14,16 +14,20 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - `soak`: 장시간 배치 실행 + 체크포인트/재개
 - `queue-run`: 다중 job 실행 (`priority`, `enabled`, 체크포인트/재개)
 - `benchmark`: 알고리즘 비교 (bayesian vs rl)
+- `train-rl`: RL 백엔드 학습/체크포인트 생성
+- `eval-rl`: RL 체크포인트 평가
 - `replay`: JSONL trial 로그 재집계/검증
 - `hil-preflight`: serial HIL 사전 안정성 점검(timeout/reset/p95 latency)
 - 안전/복구: safety guard + retry/circuit-breaker
 - 비동기 serial 세션 재사용 + 재연결(`keep_open`, `reconnect_attempts`)
-- 리포트 스키마 v4: latency/p95/throughput + Pareto front + optimizer telemetry
+- 리포트 스키마 v5: 재현성 fingerprint + objective summary + training telemetry
 
-## 최근 업데이트 (2026-03-05)
+## 최근 업데이트 (2026-03-06)
 - Async serial persistent/reconnect 상태머신 도입
 - BO heuristic 벡터화 평가 + 런타임 telemetry 추가
-- 캠페인 요약 `schema_version: 4` 업그레이드
+- BO backend 확장(`turbo`, `qnehvi`) + objective mode(`single|multi`)
+- RL `train-rl`/`eval-rl` 명령 및 checkpoint/eval 경로 추가
+- 캠페인 요약 `schema_version: 5` 업그레이드
 - `hil-preflight` 커맨드 + `--require-preflight` 게이트 도입
 - CI lint/typecheck를 fail-fast 게이트로 강화
 - 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
@@ -86,6 +90,10 @@ flowchart LR
 python -m src.cli hil-preflight --target stm32f3 --hardware serial --serial-port /dev/ttyUSB0
 python -m src.cli run --template experiments/configs/soak_hil_stm32f3.yaml --hardware serial --serial-port /dev/ttyUSB0 --require-preflight
 
+# RL train / eval
+python -m src.cli train-rl --target stm32f3 --rl-backend sb3 --steps 5000 --run-tag rl_baseline
+python -m src.cli eval-rl --target stm32f3 --rl-backend sb3 --checkpoint experiments/results/rl_sb3_checkpoint_step_5000_train_final.json
+
 # soak + resume
 python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20
 python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20 --resume
@@ -101,8 +109,19 @@ python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
 ```yaml
 optimizer:
   bo:
+    backend: turbo   # auto|heuristic|botorch|turbo|qnehvi
+    objective_mode: multi
+    multi_objective_weights:
+      reward: 1.0
+      exploration: 0.5
     candidate_pool_size: 192
     vectorized_heuristic: true
+  rl:
+    backend: sb3
+    warmup_steps: 256
+    eval_interval: 1000
+    save_best_only: false
+    checkpoint_dir: experiments/results
 
 hardware:
   serial:
@@ -118,10 +137,13 @@ hardware:
       max_p95_latency_s: 0.50
 ```
 
-### 리포트 확인 포인트 (v4)
+### 리포트 확인 포인트 (v5)
 - `runtime.throughput_trials_per_second`
 - `latency.mean_seconds / p95_seconds / max_seconds`
 - `pareto_front`
+- `reproducibility.config_hash_sha256 / git_sha / python_version`
+- `objective_summary.mode / multi_objective_weights`
+- `training.optimizer_backend / observed_steps`
 - `optimizer_runtime`
 
 ## 품질 확인

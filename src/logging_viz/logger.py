@@ -38,10 +38,15 @@ class ExperimentLogger:
         target_dir.mkdir(parents=True, exist_ok=True)
 
         summary_path = target_dir / f"{campaign.campaign_id}_{self.run_id}.json"
+        runtime_fingerprint = campaign.config.get("_runtime_fingerprint", {})
+        optimizer_cfg = campaign.config.get("optimizer", {}) if isinstance(campaign.config, dict) else {}
+        bo_cfg = optimizer_cfg.get("bo", {}) if isinstance(optimizer_cfg, dict) else {}
+        run_tag = campaign.config.get("run_tag") or campaign.config.get("logging", {}).get("run_tag")
         payload: Dict[str, Any] = {
-            "schema_version": 4,
+            "schema_version": 5,
             "campaign_id": campaign.campaign_id,
             "run_id": self.run_id,
+            "run_tag": run_tag,
             "n_trials": campaign.n_trials,
             "success_rate": campaign.success_rate,
             "primitive_repro_rate": campaign.primitive_repro_rate,
@@ -65,6 +70,22 @@ class ExperimentLogger:
             },
             "pareto_front": campaign.pareto_front,
             "config": campaign.config,
+            "reproducibility": {
+                "config_hash_sha256": runtime_fingerprint.get("config_hash_sha256"),
+                "git_sha": runtime_fingerprint.get("git_sha"),
+                "git_dirty": runtime_fingerprint.get("git_dirty"),
+                "python_version": runtime_fingerprint.get("python_version"),
+                "platform": runtime_fingerprint.get("platform"),
+            },
+            "objective_summary": {
+                "mode": bo_cfg.get("objective_mode", "single"),
+                "multi_objective_weights": bo_cfg.get("multi_objective_weights", {}),
+            },
+            "training": {
+                "optimizer_backend": (optimizer_info or {}).get("backend_in_use"),
+                "observed_steps": (optimizer_info or {}).get("observed_steps"),
+                "total_timesteps": (optimizer_info or {}).get("total_timesteps"),
+            },
             "optimizer_runtime": optimizer_info or {"enabled": False},
             "mlflow": mlflow_info or {"enabled": False},
         }
@@ -92,6 +113,8 @@ class ExperimentLogger:
             "run_id": self.run_id,
             "config_version": int(config.get("config_version", 1)),
             "config_hash_sha256": config_hash,
+            "runtime_fingerprint": config.get("_runtime_fingerprint", {}),
+            "run_tag": config.get("run_tag") or config.get("logging", {}).get("run_tag"),
             "target": config.get("target", {}),
             "optimizer": config.get("optimizer", {}),
             "plugins": list(plugin_snapshot or []),

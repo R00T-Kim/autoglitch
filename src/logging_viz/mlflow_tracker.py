@@ -44,12 +44,13 @@ class MLflowTracker:
         run_name: str,
         tags: Optional[Mapping[str, str]] = None,
         params: Optional[Mapping[str, Any]] = None,
+        nested: bool = False,
     ) -> None:
         if not self.enabled or self._mlflow is None:
             return
 
         self._mlflow.set_experiment(self.experiment_name)
-        self._mlflow.start_run(run_name=run_name, tags=dict(tags or {}))
+        self._mlflow.start_run(run_name=run_name, tags=dict(tags or {}), nested=nested)
         active = self._mlflow.active_run()
         self.run_id = active.info.run_id if active else None
         self._active = True

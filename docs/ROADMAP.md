@@ -6,7 +6,7 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 ## Primary KPI
 - **Primitive reproducibility rate**: ratio of repeated primitive hits under fixed settings.
 
-## Current Status (2026-03-05)
+## Current Status (2026-03-06)
 - ✅ Strict config / safety / recovery baseline
 - ✅ Queue/soak/replay/benchmark 운영 경로
 - ✅ Async serial persistent + reconnect
@@ -14,7 +14,9 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 - ✅ BO vectorized heuristic + telemetry
 - ✅ Campaign summary schema v4 (latency/throughput/Pareto/optimizer runtime)
 - ✅ CI lint/typecheck gate hardening (fail-fast)
-- 🔜 Next: SB3 실학습 경로, TuRBO/qNEHVI 실험, HIL 게이트 강화
+- ✅ RL train/eval CLI + SB3 facade checkpoint/eval 경로
+- ✅ BO backend 확장(`turbo`, `qnehvi`) + objective mode 도입
+- 🔜 Next: botorch 기반 TuRBO/qNEHVI true backend 정교화, HIL 게이트 강화
 
 ## Milestones
 
@@ -35,7 +37,7 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 - ✅ Compute and report `time_to_first_primitive` and `primitive_repro_rate`.
 - ✅ Add integration tests for state transitions and report generation.
 - ✅ Add failure categorization tags in trial metadata.
-- ✅ Add latency/throughput/Pareto runtime metrics (`schema_version: 4`).
+- ✅ Add latency/throughput/Pareto runtime metrics (`schema_version: 4`), then reproducibility metadata (`schema_version: 5`).
 
 ### Weeks 7-8 — RL/LLM Minimal Integration
 - ✅ Add lightweight RL optimizer path (optional module switch).
@@ -44,8 +46,8 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 - ✅ Freeze docs for reproducible runbook.
 
 ## Next Wave (Research/Performance)
-1. SB3 실학습 파이프라인(callback/eval/checkpoint 연동)
-2. TuRBO backend 및 multi-objective (qNEHVI 계열) 실험 브랜치
+1. TuRBO/qNEHVI botorch-native 경로 정교화(현재는 호환 backend 레이어)
+2. RL true online/offline 학습 루프(실장비/시뮬레이터 분리, callback 고도화)
 3. HIL gate: serial jitter/timeout stress, 재현성/안정성 기준선 확정
 
 ## Deliverables

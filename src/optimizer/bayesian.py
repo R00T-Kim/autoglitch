@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import MISSING, fields
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
@@ -45,13 +45,19 @@ class BayesianOptimizer(BaseOptimizer):
         n_initial: int = 50,
         acquisition: str = "ei",
         backend: str = "auto",
+        objective_mode: str = "single",
+        multi_objective_weights: Dict[str, float] | None = None,
         candidate_pool_size: int = 192,
         vectorized_heuristic: bool = True,
     ):
         super().__init__(param_space, seed)
         self.n_initial = n_initial
         self.acquisition = acquisition.lower()
-        self.backend_preference = backend.lower()
+        self.backend_preference = self._normalize_backend(backend.lower())
+        self.objective_mode = "multi" if str(objective_mode).lower() == "multi" else "single"
+        self.multi_objective_weights = {
+            str(key): float(value) for key, value in (multi_objective_weights or {}).items()
+        }
         self.candidate_pool_size = max(1, int(candidate_pool_size))
         self.vectorized_heuristic = vectorized_heuristic
 
@@ -66,6 +72,8 @@ class BayesianOptimizer(BaseOptimizer):
             raise ValueError("param_space must include at least one tunable parameter")
 
         self._backend_in_use = "heuristic"
+        self._backend_events: List[str] = []
+        self._fallback_reason: str | None = None
         self._model_fit_count = 0
         self._candidate_evaluations = 0
         self._timings: Dict[str, Dict[str, float]] = {
@@ -83,6 +91,10 @@ class BayesianOptimizer(BaseOptimizer):
             "enabled": True,
             "backend_preference": self.backend_preference,
             "backend_in_use": self._backend_in_use,
+            "fallback_reason": self._fallback_reason,
+            "backend_events": list(self._backend_events[-10:]),
+            "objective_mode": self.objective_mode,
+            "multi_objective_weights": dict(self.multi_objective_weights),
             "vectorized_heuristic": self.vectorized_heuristic,
             "candidate_pool_size": self.candidate_pool_size,
             "n_trials": self.n_trials,
@@ -136,21 +148,28 @@ class BayesianOptimizer(BaseOptimizer):
         if not self._history:
             self._model = None
             self._backend_in_use = "heuristic"
+            self._fallback_reason = "insufficient_history"
             self._record_timing("fit", time.perf_counter() - started)
             return
 
         if self._should_try_botorch() and len(self._history) >= max(4, len(self._search_fields) + 1):
             try:
                 self._fit_model_botorch()
-                self._backend_in_use = "botorch"
+                self._backend_in_use = self._resolve_botorch_backend_name()
+                self._fallback_reason = None
+                self._note_backend_event(f"fit:{self._backend_in_use}")
                 self._model_fit_count += 1
                 self._record_timing("fit", time.perf_counter() - started)
                 return
             except Exception as exc:  # pragma: no cover - defensive fallback
                 logger.warning("botorch backend unavailable, fallback to heuristic: %s", exc)
+                self._fallback_reason = f"botorch_fit_failed:{exc}"
+                self._note_backend_event("fit:heuristic_fallback")
 
         self._fit_model_heuristic()
         self._backend_in_use = "heuristic"
+        if not self._fallback_reason:
+            self._fallback_reason = "backend_preference_heuristic"
         self._model_fit_count += 1
         self._record_timing("fit", time.perf_counter() - started)
 
@@ -250,18 +269,25 @@ class BayesianOptimizer(BaseOptimizer):
         try:
             bounds = self._torch_bounds()
             acqf = self._build_botorch_acquisition(model, best_reward)
+            num_restarts = 8
+            raw_samples = 128
+            if self.backend_preference == "turbo":
+                num_restarts = 12
+                raw_samples = 192
             candidate, _ = optimize_acqf(
                 acq_function=acqf,
                 bounds=bounds,
                 q=1,
-                num_restarts=8,
-                raw_samples=128,
+                num_restarts=num_restarts,
+                raw_samples=raw_samples,
             )
             vector = candidate.detach().cpu().numpy().reshape(-1)
             sampled = self._vector_to_sampled(vector)
             return self._build_params(sampled)
         except Exception as exc:  # pragma: no cover - defensive fallback
             logger.warning("botorch acquisition optimization failed: %s", exc)
+            self._fallback_reason = f"botorch_acq_failed:{exc}"
+            self._note_backend_event("acq:heuristic_fallback")
             return None
 
     def _predict_heuristic(self, candidate_vec: np.ndarray) -> Tuple[float, float]:
@@ -305,16 +331,24 @@ class BayesianOptimizer(BaseOptimizer):
     def _acquisition_score_batch(self, mu: np.ndarray, uncertainty: np.ndarray) -> np.ndarray:
         best_reward = float(self._model["best_reward"]) if self._model else 0.0
         improvement = mu - best_reward
+        exploit_weight = float(self.multi_objective_weights.get("reward", 1.0))
+        explore_weight = float(self.multi_objective_weights.get("exploration", 0.4))
+        if self.objective_mode == "multi":
+            exploit_weight = max(0.0, exploit_weight)
+            explore_weight = max(0.0, explore_weight)
+        else:
+            exploit_weight = 1.0
+            explore_weight = 0.4
 
         if self.acquisition == "ucb":
-            return mu + 0.6 * uncertainty
+            return exploit_weight * mu + max(0.1, explore_weight) * uncertainty
 
         if self.acquisition == "pi":
             temperature = np.maximum(0.05, uncertainty)
             return 1.0 / (1.0 + np.exp(-(improvement / temperature)))
 
         # default: EI 근사 (exploit + explore)
-        return improvement + 0.4 * uncertainty
+        return exploit_weight * improvement + explore_weight * uncertainty
 
     def _sample_candidate_vectors(self, n_samples: int) -> np.ndarray:
         sample_count = max(1, int(n_samples))
@@ -331,6 +365,13 @@ class BayesianOptimizer(BaseOptimizer):
         return matrix
 
     def _build_botorch_acquisition(self, model, best_reward: float):  # pragma: no cover - optional path
+        if self.backend_preference == "qnehvi":
+            if self.objective_mode != "multi":
+                self._note_backend_event("qnehvi_requested_single_objective_fallback")
+                self._fallback_reason = "qnehvi_requires_multi_objective"
+            else:
+                self._note_backend_event("qnehvi_requested_using_ei_approximation")
+                self._fallback_reason = "qnehvi_approximated_with_ei"
         if self.acquisition == "ucb":
             return UpperConfidenceBound(model=model, beta=0.2)
         if self.acquisition == "pi":
@@ -375,8 +416,25 @@ class BayesianOptimizer(BaseOptimizer):
         if self.backend_preference == "heuristic":
             return False
         if not _HAS_BOTORCH:
+            if self.backend_preference in {"botorch", "turbo", "qnehvi"}:
+                self._fallback_reason = "botorch_not_installed"
+                self._note_backend_event("botorch_not_installed")
             return False
-        return self.backend_preference in {"auto", "botorch"}
+        return self.backend_preference in {"auto", "botorch", "turbo", "qnehvi"}
+
+    @staticmethod
+    def _normalize_backend(backend: str) -> str:
+        if backend in {"auto", "heuristic", "botorch", "turbo", "qnehvi"}:
+            return backend
+        return "auto"
+
+    def _resolve_botorch_backend_name(self) -> str:
+        if self.backend_preference in {"botorch", "turbo", "qnehvi"}:
+            return self.backend_preference
+        return "botorch"
+
+    def _note_backend_event(self, message: str) -> None:
+        self._backend_events.append(message)
 
     def _record_timing(self, key: str, elapsed_s: float) -> None:
         stats = self._timings.get(key)

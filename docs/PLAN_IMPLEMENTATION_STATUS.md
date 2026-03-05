@@ -42,3 +42,23 @@
 - Added `--require-preflight` gate for `run`, `soak`, `queue-run`, `benchmark`.
 - Added strict schema for `hardware.serial.preflight.*` thresholds.
 - Hardened CI gates by removing lint/typecheck soft-fail settings.
+
+## ✅ Additional implementation (Phase 2, 2026-03-06)
+- RL train/eval software path added:
+  - `train-rl` command for warmup training + checkpoint report
+  - `eval-rl` command for checkpoint evaluation
+- SB3 facade expanded with:
+  - checkpoint save/load helpers
+  - periodic evaluation and telemetry snapshot
+  - warmup/eval/save-best config hooks
+- BO config/backend expansion:
+  - `optimizer.bo.backend`: `turbo`, `qnehvi` accepted
+  - `optimizer.bo.objective_mode`: `single|multi`
+  - `optimizer.bo.multi_objective_weights` added
+- Reporting upgraded to `schema_version: 5`:
+  - reproducibility fingerprint (`config_hash`, git/Python/platform)
+  - objective summary
+  - training summary
+- Run tagging added (`--run-tag`, `logging.run_tag`) across run/queue/soak/benchmark.
+- GitHub Actions security hardening:
+  - `actions/checkout`, `actions/setup-python`, `github/codeql-action` full SHA pinning

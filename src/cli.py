@@ -6,6 +6,9 @@ import copy
 import hashlib
 import json
 import logging
+import platform
+import subprocess
+import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
@@ -81,6 +84,14 @@ def main() -> None:
         _hil_preflight_cmd(args)
         return
 
+    if args.command == "train-rl":
+        _train_rl_cmd(args)
+        return
+
+    if args.command == "eval-rl":
+        _eval_rl_cmd(args)
+        return
+
     parser.print_help()
 
 
@@ -105,6 +116,7 @@ def _build_parser() -> argparse.ArgumentParser:
     queue.add_argument("--config-mode", choices=["strict", "legacy"], default=None)
     queue.add_argument("--serial-io", choices=["sync", "async"], default=None)
     queue.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    queue.add_argument("--run-tag", default=None, help="optional run tag applied to queue jobs")
     queue.add_argument(
         "--require-preflight",
         action="store_true",
@@ -184,7 +196,8 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--algorithms", default="bayesian,rl", help="comma-separated algorithms")
     benchmark.add_argument("--runs", type=int, default=5, help="runs per algorithm")
     benchmark.add_argument("--trials", type=int, default=200, help="trials per run")
-    benchmark.add_argument("--bo-backend", choices=["auto", "heuristic", "botorch"], default="auto")
+    benchmark.add_argument("--bo-backend", choices=["auto", "heuristic", "botorch", "turbo", "qnehvi"], default="auto")
+    benchmark.add_argument("--objective", choices=["single", "multi"], default="single")
     benchmark.add_argument("--hardware", choices=["mock", "serial"], default=None)
     benchmark.add_argument("--serial-port", default=None)
     benchmark.add_argument("--serial-timeout", type=float, default=None)
@@ -193,6 +206,7 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--require-preflight", action="store_true")
     benchmark.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
     benchmark.add_argument("--success-threshold", type=float, default=0.30)
+    benchmark.add_argument("--run-tag", default=None)
     benchmark.add_argument("--plugin-dir", action="append", default=[])
 
     replay = sub.add_parser("replay", help="recompute summary from a trial JSONL log")
@@ -215,6 +229,27 @@ def _build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--output", default=None, help="optional preflight report output path")
     preflight.add_argument("--plugin-dir", action="append", default=[])
 
+    train_rl = sub.add_parser("train-rl", help="train RL optimizer and emit checkpoint/report")
+    train_rl.add_argument("--config", default="configs/default.yaml", help="base config path")
+    train_rl.add_argument("--template", default=None, help="campaign template yaml path")
+    train_rl.add_argument("--target", default="stm32f3", help="target profile name")
+    train_rl.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    train_rl.add_argument("--rl-backend", choices=["lite", "sb3"], default="sb3")
+    train_rl.add_argument("--steps", type=int, default=None, help="training steps override")
+    train_rl.add_argument("--run-tag", default=None, help="optional run tag for report naming/metadata")
+    train_rl.add_argument("--plugin-dir", action="append", default=[])
+
+    eval_rl = sub.add_parser("eval-rl", help="evaluate RL checkpoint or current policy")
+    eval_rl.add_argument("--config", default="configs/default.yaml", help="base config path")
+    eval_rl.add_argument("--template", default=None, help="campaign template yaml path")
+    eval_rl.add_argument("--target", default="stm32f3", help="target profile name")
+    eval_rl.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    eval_rl.add_argument("--rl-backend", choices=["lite", "sb3"], default="sb3")
+    eval_rl.add_argument("--episodes", type=int, default=50, help="evaluation episodes")
+    eval_rl.add_argument("--checkpoint", default=None, help="optional checkpoint path to load")
+    eval_rl.add_argument("--run-tag", default=None, help="optional run tag for report metadata")
+    eval_rl.add_argument("--plugin-dir", action="append", default=[])
+
     return parser
 
 
@@ -230,8 +265,9 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--target", default="stm32f3", help="target profile name (stm32f3, esp32)")
     parser.add_argument("--trials", type=int, default=None, help="number of campaign trials")
     parser.add_argument("--optimizer", choices=["bayesian", "rl"], default=None)
-    parser.add_argument("--bo-backend", choices=["auto", "heuristic", "botorch"], default=None)
+    parser.add_argument("--bo-backend", choices=["auto", "heuristic", "botorch", "turbo", "qnehvi"], default=None)
     parser.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    parser.add_argument("--objective", choices=["single", "multi"], default=None)
     parser.add_argument("--enable-llm", action="store_true", help="enable LLM advisor fallback")
     parser.add_argument("--target-primitive", default=None, help="stop early when primitive is reached")
     parser.add_argument("--hardware", choices=["mock", "serial"], default=None)
@@ -257,6 +293,7 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         default=[],
         help="additional plugin manifest directory (repeatable)",
     )
+    parser.add_argument("--run-tag", default=None, help="optional run tag for reproducibility tracking")
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +319,14 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
             report_path = preflight_result.get("report")
             raise SystemExit(f"HIL preflight failed. report={report_path}")
 
+    run_tag = _resolve_run_tag(args, config)
+    objective_mode = str(
+        getattr(args, "objective", None)
+        or config.get("optimizer", {}).get("bo", {}).get("objective_mode", "single")
+    ).lower()
+    if objective_mode not in {"single", "multi"}:
+        objective_mode = "single"
+
     plugin_registry = _load_plugin_registry(config, getattr(args, "plugin_dir", []))
 
     trials = int(args.trials or config.get("experiment", {}).get("max_trials", 100))
@@ -305,6 +350,12 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
         run_seed = fixed_seed + run_index
         run_config = copy.deepcopy(config)
         run_config.setdefault("experiment", {})["seed"] = run_seed
+        run_config.setdefault("logging", {})["run_tag"] = run_tag
+        run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = objective_mode
+        run_config["_runtime_fingerprint"] = _runtime_fingerprint(
+            config_hash_payload=run_config,
+            store_enabled=bool(run_config.get("logging", {}).get("store_env_fingerprint", True)),
+        )
 
         timestamp = datetime.now().strftime("run_%Y%m%d_%H%M%S_%f")
         run_id = f"{timestamp}_{run_index + 1:02d}" if rerun_count > 1 else timestamp
@@ -331,6 +382,7 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
             "success_threshold": success_threshold,
             "runs": run_summaries,
             "aggregate": aggregate,
+            "run_tag": run_tag,
         }
         aggregate_report_path = str(_write_json_report("repro", aggregate_report))
 
@@ -338,6 +390,8 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
         "schema_version": 1,
         "template": template_name,
         "rerun_count": rerun_count,
+        "run_tag": run_tag,
+        "objective_mode": objective_mode,
         "runs": run_summaries,
         "aggregate": aggregate,
     }
@@ -360,6 +414,7 @@ def _run_single_campaign(
 ) -> Dict[str, Any]:
     optimizer_type = args.optimizer or run_config.get("optimizer", {}).get("type", "bayesian")
     param_space = run_config.get("glitch", {}).get("parameters", {})
+    run_tag = _resolve_run_tag(args, run_config)
 
     optimizer = _create_optimizer(
         optimizer_type=optimizer_type,
@@ -380,6 +435,7 @@ def _run_single_campaign(
     recovery_executor = RecoveryExecutor.from_config(run_config)
 
     run_config["run_id"] = run_id
+    run_config["run_tag"] = run_tag
     run_config.setdefault("target", run_config.get("target", {}))
 
     orchestrator = ExperimentOrchestrator(
@@ -400,10 +456,12 @@ def _run_single_campaign(
         tags={
             "target": str(run_config.get("target", {}).get("name", "unknown")),
             "optimizer": str(optimizer_type),
+            "run_tag": str(run_tag or "none"),
         },
         params={
             "seed": run_seed,
             "trials": trials,
+            "run_tag": run_tag or "none",
         },
     )
 
@@ -432,6 +490,7 @@ def _run_single_campaign(
     return {
         "run_id": run_id,
         "seed": run_seed,
+        "run_tag": run_tag,
         "campaign_id": campaign.campaign_id,
         "n_trials": campaign.n_trials,
         "success_rate": campaign.success_rate,
@@ -483,6 +542,7 @@ def _queue_run(args: argparse.Namespace) -> None:
         "serial_io": getattr(args, "serial_io", None),
         "rl_backend": getattr(args, "rl_backend", None),
         "require_preflight": bool(getattr(args, "require_preflight", False)),
+        "run_tag": getattr(args, "run_tag", None),
     }
 
     checkpoint_file = _resolve_queue_checkpoint_path(args.checkpoint_file, queue_path)
@@ -599,6 +659,7 @@ def _queue_run(args: argparse.Namespace) -> None:
         "schema_version": 1,
         "queue": str(queue_path),
         "queue_digest": queue_digest,
+        "run_tag": getattr(args, "run_tag", None),
         "checkpoint_file": str(checkpoint_file),
         "executed_jobs": len(results),
         "completed_jobs": len([job for job in results if job.get("status") == "completed"]),
@@ -718,6 +779,8 @@ def _soak_run(args: argparse.Namespace) -> None:
         "mode": "soak",
         "checkpoint_file": str(checkpoint_file),
         "resumed": bool(args.resume),
+        "run_tag": getattr(args, "run_tag", None),
+        "objective_mode": getattr(args, "objective", None),
         "new_batches": new_batches,
         "batches": len(runs),
         "completed_batches": len(completed_runs),
@@ -746,6 +809,10 @@ def _run_benchmark(args: argparse.Namespace) -> None:
         raise SystemExit(f"unsupported algorithms: {', '.join(invalid_algorithms)}")
 
     plugin_registry = _load_plugin_registry(config, getattr(args, "plugin_dir", []))
+    run_tag = _resolve_run_tag(args, config)
+    objective_mode = str(getattr(args, "objective", "single")).lower()
+    if objective_mode not in {"single", "multi"}:
+        objective_mode = "single"
 
     results_by_algo: Dict[str, List[Dict[str, Any]]] = {algo: [] for algo in algorithms}
     base_seed = int(config.get("experiment", {}).get("fixed_seed") or config.get("experiment", {}).get("seed", 42))
@@ -758,8 +825,12 @@ def _run_benchmark(args: argparse.Namespace) -> None:
             run_args = copy.copy(args)
             run_args.optimizer = algo
             run_args.enable_llm = False
+            run_args.run_tag = run_tag
+            run_args.objective = objective_mode
             run_config = copy.deepcopy(config)
             run_config.setdefault("experiment", {})["seed"] = run_seed
+            run_config.setdefault("logging", {})["run_tag"] = run_tag
+            run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = objective_mode
 
             summary = _run_single_campaign(
                 run_config=run_config,
@@ -791,6 +862,8 @@ def _run_benchmark(args: argparse.Namespace) -> None:
         "template": template_name,
         "target": config.get("target", {}).get("name", args.target),
         "algorithms": algorithms,
+        "objective_mode": objective_mode,
+        "run_tag": run_tag,
         "runs_per_algorithm": int(args.runs),
         "trials_per_run": int(args.trials),
         "results": results_by_algo,
@@ -800,6 +873,123 @@ def _run_benchmark(args: argparse.Namespace) -> None:
 
     path = _write_json_report("comparison", payload)
     payload["comparison_report"] = str(path)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+# ---------------------------------------------------------------------------
+# RL train/eval utilities
+# ---------------------------------------------------------------------------
+
+def _train_rl_cmd(args: argparse.Namespace) -> None:
+    config, template_name = _load_run_config(args)
+    errors = _validate_runtime_config(config, mode=args.config_mode)
+    if errors:
+        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
+
+    run_tag = _resolve_run_tag(args, config)
+    config = copy.deepcopy(config)
+    config.setdefault("logging", {})["run_tag"] = run_tag
+    param_space = config.get("glitch", {}).get("parameters", {})
+    requested_backend = str(getattr(args, "rl_backend", "sb3"))
+    rl_cfg = config.get("optimizer", {}).get("rl", {})
+    total_steps = int(args.steps or rl_cfg.get("total_timesteps", 20_000))
+
+    optimizer = _create_optimizer(
+        optimizer_type="rl",
+        config=config,
+        param_space=param_space,
+        bo_backend=None,
+        rl_backend=requested_backend,
+    )
+
+    result: Dict[str, Any]
+    if isinstance(optimizer, SB3Optimizer):
+        result = optimizer.train(steps=total_steps)
+    else:
+        for _ in range(total_steps):
+            params = optimizer.suggest()
+            reward = _synthetic_reward(params)
+            optimizer.observe(params, reward, context={"source": "offline_train"})
+        result = {
+            "schema_version": 1,
+            "optimizer": "rl",
+            "backend_requested": requested_backend,
+            "backend_in_use": "lite",
+            "steps_run": total_steps,
+            "observed_steps": int(getattr(optimizer, "n_trials", total_steps)),
+            "evaluation": {
+                "episodes": min(100, total_steps),
+                "mean_reward": _mean_reward_from_history(optimizer),
+            },
+        }
+
+    payload = {
+        "schema_version": 1,
+        "created_at": datetime.now().isoformat(),
+        "template": template_name,
+        "target": config.get("target", {}).get("name", args.target),
+        "run_tag": run_tag,
+        "requested_backend": requested_backend,
+        "result": result,
+    }
+    path = _write_json_report("rl_train", payload)
+    payload["report"] = str(path)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def _eval_rl_cmd(args: argparse.Namespace) -> None:
+    config, template_name = _load_run_config(args)
+    errors = _validate_runtime_config(config, mode=args.config_mode)
+    if errors:
+        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
+
+    run_tag = _resolve_run_tag(args, config)
+    config = copy.deepcopy(config)
+    config.setdefault("logging", {})["run_tag"] = run_tag
+    requested_backend = str(getattr(args, "rl_backend", "sb3"))
+    param_space = config.get("glitch", {}).get("parameters", {})
+
+    optimizer = _create_optimizer(
+        optimizer_type="rl",
+        config=config,
+        param_space=param_space,
+        bo_backend=None,
+        rl_backend=requested_backend,
+    )
+
+    checkpoint_loaded: str | None = None
+    if args.checkpoint and isinstance(optimizer, SB3Optimizer):
+        optimizer.load_checkpoint(args.checkpoint)
+        checkpoint_loaded = str(args.checkpoint)
+
+    if isinstance(optimizer, SB3Optimizer):
+        evaluation = optimizer.evaluate(episodes=int(args.episodes))
+        backend_in_use = optimizer.backend_in_use
+    else:
+        rewards = []
+        for _ in range(max(1, int(args.episodes))):
+            rewards.append(_synthetic_reward(optimizer.suggest()))
+        evaluation = {
+            "episodes": max(1, int(args.episodes)),
+            "mean_reward": float(mean(rewards)) if rewards else 0.0,
+            "min_reward": float(min(rewards)) if rewards else 0.0,
+            "max_reward": float(max(rewards)) if rewards else 0.0,
+        }
+        backend_in_use = "lite"
+
+    payload = {
+        "schema_version": 1,
+        "created_at": datetime.now().isoformat(),
+        "template": template_name,
+        "target": config.get("target", {}).get("name", args.target),
+        "run_tag": run_tag,
+        "requested_backend": requested_backend,
+        "backend_in_use": backend_in_use,
+        "checkpoint_loaded": checkpoint_loaded,
+        "evaluation": evaluation,
+    }
+    path = _write_json_report("rl_eval", payload)
+    payload["report"] = str(path)
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
@@ -1114,6 +1304,10 @@ def _create_optimizer(
                 total_timesteps=int(rl_cfg.get("total_timesteps", 20_000)),
                 train_interval=int(rl_cfg.get("train_interval", 32)),
                 checkpoint_interval=int(rl_cfg.get("checkpoint_interval", 5_000)),
+                warmup_steps=int(rl_cfg.get("warmup_steps", 256)),
+                eval_interval=int(rl_cfg.get("eval_interval", 1_000)),
+                save_best_only=bool(rl_cfg.get("save_best_only", False)),
+                checkpoint_dir=str(rl_cfg.get("checkpoint_dir", "experiments/results")),
             )
         return RLOptimizer(
             param_space=param_space,
@@ -1131,6 +1325,11 @@ def _create_optimizer(
         n_initial=int(bo_cfg.get("n_initial", 50)),
         acquisition=str(bo_cfg.get("acquisition", "ei")),
         backend=backend,
+        objective_mode=str(bo_cfg.get("objective_mode", "single")),
+        multi_objective_weights={
+            str(key): float(value)
+            for key, value in (bo_cfg.get("multi_objective_weights", {}) or {}).items()
+        },
         candidate_pool_size=int(bo_cfg.get("candidate_pool_size", 192)),
         vectorized_heuristic=bool(bo_cfg.get("vectorized_heuristic", True)),
     )
@@ -1251,6 +1450,7 @@ def _build_run_namespace(options: Dict[str, Any], cli_plugin_dirs: Iterable[str]
         optimizer=options.get("optimizer"),
         bo_backend=options.get("bo_backend"),
         rl_backend=options.get("rl_backend"),
+        objective=options.get("objective"),
         enable_llm=bool(options.get("enable_llm", False)),
         target_primitive=options.get("target_primitive"),
         hardware=options.get("hardware"),
@@ -1261,6 +1461,7 @@ def _build_run_namespace(options: Dict[str, Any], cli_plugin_dirs: Iterable[str]
         rerun_count=options.get("rerun_count"),
         fixed_seed=options.get("fixed_seed"),
         success_threshold=options.get("success_threshold"),
+        run_tag=options.get("run_tag"),
         plugin_dir=[*list(cli_plugin_dirs), *list(option_plugin_dirs)],
     )
 
@@ -1430,6 +1631,7 @@ def _execute_soak_batch(
         optimizer=args.optimizer,
         bo_backend=args.bo_backend,
         rl_backend=getattr(args, "rl_backend", None),
+        objective=getattr(args, "objective", None),
         enable_llm=args.enable_llm,
         target_primitive=args.target_primitive,
         hardware=args.hardware,
@@ -1440,6 +1642,7 @@ def _execute_soak_batch(
         rerun_count=1,
         fixed_seed=int(base_seed + batch_index),
         success_threshold=args.success_threshold,
+        run_tag=getattr(args, "run_tag", None),
         plugin_dir=list(args.plugin_dir),
     )
 
@@ -1494,6 +1697,7 @@ def _build_soak_resume_key(args: argparse.Namespace) -> str:
         "optimizer": args.optimizer,
         "bo_backend": args.bo_backend,
         "rl_backend": getattr(args, "rl_backend", None),
+        "objective": getattr(args, "objective", None),
         "enable_llm": bool(args.enable_llm),
         "target_primitive": args.target_primitive,
         "hardware": args.hardware,
@@ -1503,6 +1707,7 @@ def _build_soak_resume_key(args: argparse.Namespace) -> str:
         "require_preflight": bool(getattr(args, "require_preflight", False)),
         "fixed_seed": args.fixed_seed,
         "success_threshold": args.success_threshold,
+        "run_tag": getattr(args, "run_tag", None),
         "plugin_dir": list(args.plugin_dir),
         "max_workers": int(args.max_workers),
         "batch_interval_s": float(args.batch_interval_s),
@@ -1520,6 +1725,7 @@ def _create_soak_checkpoint_template(args: argparse.Namespace, soak_key: str) ->
         "target": args.target,
         "template": args.template,
         "batch_trials": int(args.batch_trials),
+        "run_tag": getattr(args, "run_tag", None),
         "soak_key": soak_key,
         "created_at": now,
         "updated_at": now,
@@ -1610,6 +1816,65 @@ def _read_jsonl(path: Path) -> List[Dict[str, Any]]:
                 continue
             rows.append(json.loads(line))
     return rows
+
+
+def _synthetic_reward(params: GlitchParameters) -> float:
+    width_term = max(0.0, 1.0 - abs(float(params.width) - 20.0) / 30.0)
+    offset_term = max(0.0, 1.0 - abs(float(params.offset) - 15.0) / 30.0)
+    voltage_penalty = min(1.0, abs(float(params.voltage)) / 1.0)
+    repeat_penalty = min(1.0, abs(float(params.repeat) - 3.0) / 10.0)
+    reward = 0.6 * width_term + 0.4 * offset_term - 0.2 * voltage_penalty - 0.1 * repeat_penalty
+    return float(max(0.0, min(1.0, reward)))
+
+
+def _mean_reward_from_history(optimizer: Any) -> float:
+    history = getattr(optimizer, "_history", [])
+    if not history:
+        return 0.0
+    rewards = [float(item[1]) for item in history]
+    return float(mean(rewards)) if rewards else 0.0
+
+
+def _resolve_run_tag(args: argparse.Namespace, config: Dict[str, Any]) -> str | None:
+    cli_tag = getattr(args, "run_tag", None)
+    if cli_tag:
+        return str(cli_tag)
+    logging_tag = config.get("logging", {}).get("run_tag")
+    if logging_tag:
+        return str(logging_tag)
+    return None
+
+
+def _runtime_fingerprint(*, config_hash_payload: Dict[str, Any], store_enabled: bool) -> Dict[str, Any]:
+    config_json = json.dumps(config_hash_payload, sort_keys=True, ensure_ascii=False)
+    payload: Dict[str, Any] = {
+        "enabled": bool(store_enabled),
+        "config_hash_sha256": hashlib.sha256(config_json.encode("utf-8")).hexdigest(),
+    }
+    if not store_enabled:
+        return payload
+
+    payload.update(
+        {
+            "python_version": sys.version.split()[0],
+            "platform": platform.platform(),
+        }
+    )
+
+    git_sha = _safe_git_output(["git", "rev-parse", "HEAD"])
+    git_dirty = _safe_git_output(["git", "status", "--porcelain"])
+    if git_sha:
+        payload["git_sha"] = git_sha
+    payload["git_dirty"] = bool(git_dirty)
+    return payload
+
+
+def _safe_git_output(cmd: List[str]) -> str | None:
+    try:
+        output = subprocess.check_output(cmd, stderr=subprocess.DEVNULL, text=True).strip()
+    except Exception:
+        return None
+    return output or None
 
 
 def _load_plugin_registry(config: Dict[str, Any], cli_plugin_dirs: Iterable[str]) -> PluginRegistry:

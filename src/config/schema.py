@@ -48,7 +48,9 @@ class ExperimentConfig(_BaseStrictModel):
 class OptimizerBOConfig(_BaseStrictModel):
     n_initial: int = 50
     acquisition: str = "ei"
-    backend: Literal["auto", "heuristic", "botorch"] = "auto"
+    backend: Literal["auto", "heuristic", "botorch", "turbo", "qnehvi"] = "auto"
+    objective_mode: Literal["single", "multi"] = "single"
+    multi_objective_weights: Dict[str, float] = Field(default_factory=dict)
     candidate_pool_size: int = 192
     vectorized_heuristic: bool = True
 
@@ -59,6 +61,17 @@ class OptimizerBOConfig(_BaseStrictModel):
             raise ValueError("must be > 0")
         return value
 
+    @model_validator(mode="after")
+    def _validate_multi_objective_weights(self) -> "OptimizerBOConfig":
+        for key, value in self.multi_objective_weights.items():
+            if not isinstance(key, str) or not key:
+                raise ValueError("multi_objective_weights keys must be non-empty strings")
+            if not isinstance(value, float | int):
+                raise ValueError("multi_objective_weights values must be numeric")
+            if float(value) < 0:
+                raise ValueError("multi_objective_weights values must be >= 0")
+        return self
+
 
 class OptimizerRLConfig(_BaseStrictModel):
     algorithm: str = "ppo"
@@ -67,6 +80,10 @@ class OptimizerRLConfig(_BaseStrictModel):
     total_timesteps: int = 20_000
     train_interval: int = 32
     checkpoint_interval: int = 5_000
+    warmup_steps: int = 256
+    eval_interval: int = 1_000
+    save_best_only: bool = False
+    checkpoint_dir: str = "experiments/results"
 
     @model_validator(mode="after")
     def _validate_positive_values(self) -> "OptimizerRLConfig":
@@ -78,6 +95,12 @@ class OptimizerRLConfig(_BaseStrictModel):
             raise ValueError("train_interval must be > 0")
         if self.checkpoint_interval <= 0:
             raise ValueError("checkpoint_interval must be > 0")
+        if self.warmup_steps < 0:
+            raise ValueError("warmup_steps must be >= 0")
+        if self.eval_interval <= 0:
+            raise ValueError("eval_interval must be > 0")
+        if not self.checkpoint_dir:
+            raise ValueError("checkpoint_dir must not be empty")
         return self
 
 
@@ -203,6 +226,8 @@ class LoggingConfig(_BaseStrictModel):
     save_waveforms: bool = False
     mlflow_tracking_uri: str | None = None  # legacy key
     mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
+    run_tag: str | None = None
+    store_env_fingerprint: bool = True
 
 
 class PluginsConfig(_BaseStrictModel):

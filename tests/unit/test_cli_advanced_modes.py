@@ -17,6 +17,7 @@ def _base_options() -> dict:
         "trials": 2,
         "optimizer": "bayesian",
         "bo_backend": "heuristic",
+        "objective": "single",
         "enable_llm": False,
         "target_primitive": None,
         "hardware": "mock",
@@ -26,6 +27,7 @@ def _base_options() -> dict:
         "rerun_count": 1,
         "fixed_seed": 123,
         "success_threshold": 0.3,
+        "run_tag": "unit",
         "plugin_dir": [],
     }
 
@@ -41,6 +43,8 @@ def test_build_run_namespace_merges_plugin_dirs() -> None:
 
     assert ns.plugin_dir == ["/tmp/c", "/tmp/a", "/tmp/b"]
     assert ns.require_preflight is False
+    assert ns.objective == "single"
+    assert ns.run_tag == "unit"
 
 
 def test_execute_campaign_returns_manifest_and_report() -> None:
@@ -49,6 +53,7 @@ def test_execute_campaign_returns_manifest_and_report() -> None:
 
     run = output["runs"][0]
     assert run["n_trials"] == 2
+    assert run["run_tag"] == "unit"
     assert Path(run["report"]).exists()
     assert Path(run["manifest"]).exists()
 

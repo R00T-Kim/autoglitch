@@ -52,3 +52,23 @@ def test_strict_schema_rejects_invalid_serial_preflight_threshold() -> None:
 
     errors = validate_config(config, mode="strict")
     assert any("max_timeout_rate" in item for item in errors)
+
+
+def test_strict_schema_accepts_new_bo_backend_and_objective_mode() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["optimizer"]["bo"]["backend"] = "turbo"
+    config["optimizer"]["bo"]["objective_mode"] = "multi"
+    config["optimizer"]["bo"]["multi_objective_weights"] = {"reward": 1.0, "exploration": 0.5}
+
+    errors = validate_config(config, mode="strict")
+    assert errors == []
+
+
+def test_strict_schema_rejects_negative_multi_objective_weight() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["optimizer"]["bo"]["multi_objective_weights"] = {"reward": -1.0}
+
+    errors = validate_config(config, mode="strict")
+    assert any("multi_objective_weights" in item for item in errors)

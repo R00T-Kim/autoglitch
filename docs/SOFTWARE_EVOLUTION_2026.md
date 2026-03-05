@@ -2,13 +2,16 @@
 
 외부 레퍼런스(공식 문서/공식 레포) 기반으로, 현재 코드베이스에서 **실제 효과가 큰 소프트웨어 개선 항목**을 우선순위로 정리했다.
 
-## 적용 현황 스냅샷 (2026-03-05)
+## 적용 현황 스냅샷 (2026-03-06)
 - ✅ Pydantic strict config 계층 적용
 - ✅ Serial async bridge + persistent/reconnect 적용
 - ✅ Serial HIL preflight + 실행 전 강제 게이트(`--require-preflight`)
 - ✅ report schema v4(throughput/latency/Pareto/optimizer telemetry) 적용
+- ✅ report schema v5(재현성 fingerprint/objective/training) 적용
+- ✅ RL train/eval CLI + SB3 checkpoint/eval facade 적용
+- ✅ BO backend 확장(`turbo`, `qnehvi`) + objective mode 적용
 - ✅ CodeQL/Semgrep 워크플로우 + CI gate hardening 적용
-- ⏳ TuRBO / qNEHVI / SB3 full-train path는 다음 단계
+- ⏳ botorch-native TuRBO/qNEHVI 정교화는 다음 단계
 
 ## 1) 지금 바로 적용 가능한 Quick Wins
 

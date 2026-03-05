@@ -80,7 +80,7 @@ def test_campaign_latency_metrics_and_pareto_properties() -> None:
     assert front[0]["trial_id"] == 2
 
 
-def test_campaign_summary_schema_v4_contains_runtime_latency_and_optimizer(tmp_path) -> None:
+def test_campaign_summary_schema_v5_contains_repro_and_objective_fields(tmp_path) -> None:
     start = datetime(2026, 3, 5, 12, 0, 0)
     campaign = CampaignResult(
         campaign_id="campaign_test",
@@ -102,7 +102,18 @@ def test_campaign_summary_schema_v4_contains_runtime_latency_and_optimizer(tmp_p
                 timestamp=start + timedelta(seconds=1),
             ),
         ],
-        config={"target": {"name": "STM32F303"}},
+        config={
+            "target": {"name": "STM32F303"},
+            "run_tag": "unit",
+            "optimizer": {"bo": {"objective_mode": "multi", "multi_objective_weights": {"reward": 1.0}}},
+            "_runtime_fingerprint": {
+                "config_hash_sha256": "abc",
+                "git_sha": "deadbeef",
+                "git_dirty": False,
+                "python_version": "3.12.0",
+                "platform": "linux",
+            },
+        },
     )
 
     logger = ExperimentLogger(output_dir=str(tmp_path), run_id="run_test")
@@ -114,8 +125,11 @@ def test_campaign_summary_schema_v4_contains_runtime_latency_and_optimizer(tmp_p
     )
 
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 4
+    assert payload["schema_version"] == 5
     assert payload["runtime"]["throughput_trials_per_second"] > 0
     assert payload["latency"]["mean_seconds"] == pytest.approx(0.15)
     assert payload["pareto_front"]
     assert payload["optimizer_runtime"]["enabled"] is True
+    assert payload["reproducibility"]["config_hash_sha256"] == "abc"
+    assert payload["objective_summary"]["mode"] == "multi"
+    assert payload["run_tag"] == "unit"

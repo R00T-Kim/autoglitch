@@ -89,3 +89,41 @@ def test_vectorized_heuristic_exposes_telemetry() -> None:
     assert telemetry["candidate_pool_size"] == 32
     assert telemetry["candidate_evaluations"] >= 32
     assert telemetry["latency_ms"]["suggest"]["count"] >= 1
+
+
+def test_turbo_backend_falls_back_when_botorch_unavailable() -> None:
+    optimizer = BayesianOptimizer(
+        PARAM_SPACE,
+        seed=99,
+        n_initial=2,
+        acquisition="ei",
+        backend="turbo",
+    )
+    for _ in range(6):
+        params = optimizer.suggest()
+        optimizer.observe(params, _reward(params.width, params.offset))
+
+    telemetry = optimizer.telemetry_snapshot()
+    assert telemetry["backend_preference"] == "turbo"
+    assert telemetry["backend_in_use"] in {"turbo", "heuristic", "botorch"}
+    if telemetry["backend_in_use"] == "heuristic":
+        assert telemetry["fallback_reason"] is not None
+
+
+def test_qnehvi_multi_objective_metadata_is_reported() -> None:
+    optimizer = BayesianOptimizer(
+        PARAM_SPACE,
+        seed=101,
+        n_initial=2,
+        acquisition="ei",
+        backend="qnehvi",
+        objective_mode="multi",
+        multi_objective_weights={"reward": 1.0, "exploration": 0.6},
+    )
+    for _ in range(8):
+        params = optimizer.suggest()
+        optimizer.observe(params, _reward(params.width, params.offset))
+
+    telemetry = optimizer.telemetry_snapshot()
+    assert telemetry["objective_mode"] == "multi"
+    assert telemetry["multi_objective_weights"]["exploration"] == 0.6

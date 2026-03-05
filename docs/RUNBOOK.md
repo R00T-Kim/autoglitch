@@ -167,12 +167,29 @@ jobs:
 python -m src.cli benchmark \
   --template experiments/configs/repro_stm32f3.yaml \
   --algorithms bayesian,rl \
+  --bo-backend turbo \
+  --objective multi \
   --rl-backend sb3 \
   --runs 5 \
-  --trials 200
+  --trials 200 \
+  --run-tag bench_2026q1
 ```
 
-## 9) 로그 재생/검증
+## 9) RL 학습/평가
+```bash
+python -m src.cli train-rl \
+  --target stm32f3 \
+  --rl-backend sb3 \
+  --steps 5000 \
+  --run-tag rl_baseline
+
+python -m src.cli eval-rl \
+  --target stm32f3 \
+  --rl-backend sb3 \
+  --checkpoint experiments/results/rl_sb3_checkpoint_step_5000_train_final.json
+```
+
+## 10) 로그 재생/검증
 ```bash
 python -m src.cli replay \
   --log experiments/logs/<run_id>.jsonl \
@@ -181,7 +198,7 @@ python -m src.cli replay \
 
 ## 출력 산출물
 - Trial log: `experiments/logs/<run_id>.jsonl`
-- Campaign summary: `experiments/results/campaign_*_<run_id>.json` (`schema_version: 4`)
+- Campaign summary: `experiments/results/campaign_*_<run_id>.json` (`schema_version: 5`)
 - Run manifest: `experiments/results/manifest_<run_id>.json`
 - Repro aggregate: `experiments/results/repro_*.json`
 - Benchmark comparison: `experiments/results/comparison_*.json`
@@ -189,10 +206,13 @@ python -m src.cli replay \
 - Soak summary: `experiments/results/soak_*.json`
 - HIL preflight summary: `experiments/results/hil_preflight_*.json`
 
-### Campaign summary(v4) 핵심 필드
+### Campaign summary(v5) 핵심 필드
 - `runtime.total_seconds`, `runtime.throughput_trials_per_second`
 - `latency.mean_seconds`, `latency.p95_seconds`, `latency.max_seconds`
 - `pareto_front` (signal score vs response latency 비지배 해)
+- `reproducibility.config_hash_sha256`, `reproducibility.git_sha`, `reproducibility.python_version`
+- `objective_summary.mode`, `objective_summary.multi_objective_weights`
+- `training.optimizer_backend`, `training.observed_steps`
 - `optimizer_runtime` (optimizer telemetry snapshot)
 
 ## PR/Release 게이트

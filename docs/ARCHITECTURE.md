@@ -2,13 +2,14 @@
 
 > **"LLM이 못하는 하드웨어 해킹을 AI가 하게 만드는"** closed-loop 자동 글리칭 시스템
 
-## 최근 소프트웨어 업데이트 (2026-03-05)
+## 최근 소프트웨어 업데이트 (2026-03-06)
 
 - **Strict Config 계층**: `pydantic` 기반 strict schema 검증 (`--config-mode strict|legacy`)
 - **Serial I/O 모드 분리**: `sync`(기본) + `async` 옵션 (`--serial-io async`) + persistent/reconnect 상태머신
 - **HIL 사전검증 게이트**: `hil-preflight` + `--require-preflight`로 serial 안정성 확인 후 캠페인 실행
-- **RL 백엔드 선택**: `lite`(기본) + `sb3` facade (`--rl-backend sb3`)
-- **추적 고도화**: campaign summary `schema_version: 4`, latency/throughput/Pareto/optimizer telemetry 포함
+- **RL 학습/평가 경로**: `train-rl` / `eval-rl` + SB3 facade checkpoint/load/eval
+- **BO backend 확장**: `auto|heuristic|botorch|turbo|qnehvi` + objective mode(`single|multi`)
+- **추적 고도화**: campaign summary `schema_version: 5`, 재현성 fingerprint/objective/training 포함
 - **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
 
 ---
