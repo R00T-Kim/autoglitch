@@ -234,6 +234,60 @@ class PluginsConfig(_BaseStrictModel):
     manifest_dirs: List[str] = Field(default_factory=list)
 
 
+class AIConfig(_BaseStrictModel):
+    mode: Literal["off", "advisor", "agentic_shadow", "agentic_enforced"] = "off"
+    provider: str = "local"
+    model: str = "heuristic-planner-v1"
+    planner_interval_trials: int = 50
+    max_patch_delta: float = 0.5
+    max_actions_per_cycle: int = 3
+    confidence_threshold: float = 0.25
+    fallback_on_policy_reject: bool = True
+
+    @model_validator(mode="after")
+    def _validate_ai(self) -> "AIConfig":
+        if self.planner_interval_trials <= 0:
+            raise ValueError("planner_interval_trials must be > 0")
+        if self.max_patch_delta < 0:
+            raise ValueError("max_patch_delta must be >= 0")
+        if self.max_actions_per_cycle <= 0:
+            raise ValueError("max_actions_per_cycle must be > 0")
+        if not 0.0 <= self.confidence_threshold <= 1.0:
+            raise ValueError("confidence_threshold must be in [0, 1]")
+        return self
+
+
+class PolicyConfig(_BaseStrictModel):
+    allowed_fields: List[str] = Field(default_factory=list)
+    hard_limits: Dict[str, Dict[str, float]] = Field(default_factory=dict)
+    rate_limits: Dict[str, float] = Field(default_factory=dict)
+    reject_on_unknown_field: bool = True
+    max_patch_delta: float = 0.5
+    max_actions_per_cycle: int = 3
+
+    @model_validator(mode="after")
+    def _validate_policy(self) -> "PolicyConfig":
+        if self.max_patch_delta < 0:
+            raise ValueError("max_patch_delta must be >= 0")
+        if self.max_actions_per_cycle <= 0:
+            raise ValueError("max_actions_per_cycle must be > 0")
+        return self
+
+
+class KnowledgeConfig(_BaseStrictModel):
+    enabled: bool = False
+    store_path: str = "data/knowledge/kb.jsonl"
+    retrieval_top_k: int = 5
+
+    @model_validator(mode="after")
+    def _validate_knowledge(self) -> "KnowledgeConfig":
+        if self.retrieval_top_k <= 0:
+            raise ValueError("retrieval_top_k must be > 0")
+        if not self.store_path:
+            raise ValueError("store_path must not be empty")
+        return self
+
+
 class TargetConfig(_BaseStrictModel):
     name: str
 
@@ -248,6 +302,9 @@ class AutoglitchConfig(_BaseStrictModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     plugins: PluginsConfig = Field(default_factory=PluginsConfig)
+    ai: AIConfig = Field(default_factory=AIConfig)
+    policy: PolicyConfig = Field(default_factory=PolicyConfig)
+    knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
 
     @field_validator("config_version")
     @classmethod

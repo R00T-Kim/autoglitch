@@ -41,9 +41,10 @@ class ExperimentLogger:
         runtime_fingerprint = campaign.config.get("_runtime_fingerprint", {})
         optimizer_cfg = campaign.config.get("optimizer", {}) if isinstance(campaign.config, dict) else {}
         bo_cfg = optimizer_cfg.get("bo", {}) if isinstance(optimizer_cfg, dict) else {}
+        ai_cfg = campaign.config.get("ai", {}) if isinstance(campaign.config, dict) else {}
         run_tag = campaign.config.get("run_tag") or campaign.config.get("logging", {}).get("run_tag")
         payload: Dict[str, Any] = {
-            "schema_version": 5,
+            "schema_version": 6,
             "campaign_id": campaign.campaign_id,
             "run_id": self.run_id,
             "run_tag": run_tag,
@@ -81,6 +82,13 @@ class ExperimentLogger:
                 "mode": bo_cfg.get("objective_mode", "single"),
                 "multi_objective_weights": bo_cfg.get("multi_objective_weights", {}),
             },
+            "agentic": {
+                "mode": ai_cfg.get("mode", "off"),
+                "event_count": len(campaign.planner_events),
+                "policy_reject_count": campaign.policy_reject_count,
+                "agentic_interventions": campaign.agentic_interventions,
+            },
+            "decision_trace": campaign.planner_events,
             "training": {
                 "optimizer_backend": (optimizer_info or {}).get("backend_in_use"),
                 "observed_steps": (optimizer_info or {}).get("observed_steps"),

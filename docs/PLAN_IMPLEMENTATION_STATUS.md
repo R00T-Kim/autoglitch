@@ -62,3 +62,19 @@
 - Run tagging added (`--run-tag`, `logging.run_tag`) across run/queue/soak/benchmark.
 - GitHub Actions security hardening:
   - `actions/checkout`, `actions/setup-python`, `github/codeql-action` full SHA pinning
+
+## ✅ Additional implementation (Phase 3, 2026-03-06)
+- Agentic control skeleton added:
+  - `src/agentic/planner.py`, `policy.py`, `patcher.py`, `trace.py`
+  - AI modes: `off`, `advisor`, `agentic_shadow`, `agentic_enforced`
+- New CLI:
+  - `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query`
+- Config schema expanded:
+  - `ai.*`, `policy.*`, `knowledge.*`
+  - default policy file: `configs/policy/default_policy.yaml`
+- Campaign summary upgraded to `schema_version: 6`:
+  - `agentic` metrics + `decision_trace`
+- Added unit tests for:
+  - agentic policy validation
+  - agentic CLI flow
+  - knowledge ingest/query roundtrip

@@ -16,6 +16,7 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 - ✅ CI lint/typecheck gate hardening (fail-fast)
 - ✅ RL train/eval CLI + SB3 facade checkpoint/eval 경로
 - ✅ BO backend 확장(`turbo`, `qnehvi`) + objective mode 도입
+- ✅ Agentic planner/policy skeleton + decision trace + eval-suite/kb utilities
 - 🔜 Next: botorch 기반 TuRBO/qNEHVI true backend 정교화, HIL 게이트 강화
 
 ## Milestones

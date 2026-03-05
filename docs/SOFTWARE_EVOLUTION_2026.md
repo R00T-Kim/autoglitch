@@ -10,6 +10,7 @@
 - ✅ report schema v5(재현성 fingerprint/objective/training) 적용
 - ✅ RL train/eval CLI + SB3 checkpoint/eval facade 적용
 - ✅ BO backend 확장(`turbo`, `qnehvi`) + objective mode 적용
+- ✅ Agentic planner/policy skeleton + decision trace(report v6) + knowledge CLI 적용
 - ✅ CodeQL/Semgrep 워크플로우 + CI gate hardening 적용
 - ⏳ botorch-native TuRBO/qNEHVI 정교화는 다음 단계
 

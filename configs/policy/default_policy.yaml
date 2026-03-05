@@ -1,0 +1,22 @@
+allowed_fields:
+  - optimizer.bo.candidate_pool_size
+  - optimizer.bo.objective_mode
+  - optimizer.bo.multi_objective_weights.*
+  - optimizer.bo.vectorized_heuristic
+  - optimizer.rl.train_interval
+  - optimizer.rl.learning_rate
+  - experiment.success_threshold
+hard_limits:
+  optimizer.bo.candidate_pool_size:
+    min: 32
+    max: 512
+  optimizer.rl.learning_rate:
+    min: 0.000001
+    max: 0.01
+  experiment.success_threshold:
+    min: 0.05
+    max: 0.95
+rate_limits: {}
+reject_on_unknown_field: true
+max_patch_delta: 0.5
+max_actions_per_cycle: 3

@@ -86,6 +86,42 @@ safety:
   auto_throttle: true
 plugins:
   manifest_dirs: []
+ai:
+  mode: "off"
+  provider: local
+  model: heuristic-planner-v1
+  planner_interval_trials: 50
+  max_patch_delta: 0.5
+  max_actions_per_cycle: 3
+  confidence_threshold: 0.25
+  fallback_on_policy_reject: true
+policy:
+  allowed_fields:
+    - optimizer.bo.candidate_pool_size
+    - optimizer.bo.objective_mode
+    - optimizer.bo.multi_objective_weights.*
+    - optimizer.bo.vectorized_heuristic
+    - optimizer.rl.train_interval
+    - optimizer.rl.learning_rate
+    - experiment.success_threshold
+  hard_limits:
+    optimizer.bo.candidate_pool_size:
+      min: 32
+      max: 512
+    optimizer.rl.learning_rate:
+      min: 0.000001
+      max: 0.01
+    experiment.success_threshold:
+      min: 0.05
+      max: 0.95
+  rate_limits: {}
+  reject_on_unknown_field: true
+  max_patch_delta: 0.5
+  max_actions_per_cycle: 3
+knowledge:
+  enabled: false
+  store_path: data/knowledge/kb.jsonl
+  retrieval_top_k: 5
 classifier:
   model: rule_based
   fault_classes:

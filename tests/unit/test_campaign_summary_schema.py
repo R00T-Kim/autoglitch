@@ -80,7 +80,7 @@ def test_campaign_latency_metrics_and_pareto_properties() -> None:
     assert front[0]["trial_id"] == 2
 
 
-def test_campaign_summary_schema_v5_contains_repro_and_objective_fields(tmp_path) -> None:
+def test_campaign_summary_schema_v6_contains_agentic_fields(tmp_path) -> None:
     start = datetime(2026, 3, 5, 12, 0, 0)
     campaign = CampaignResult(
         campaign_id="campaign_test",
@@ -105,6 +105,7 @@ def test_campaign_summary_schema_v5_contains_repro_and_objective_fields(tmp_path
         config={
             "target": {"name": "STM32F303"},
             "run_tag": "unit",
+            "ai": {"mode": "agentic_shadow"},
             "optimizer": {"bo": {"objective_mode": "multi", "multi_objective_weights": {"reward": 1.0}}},
             "_runtime_fingerprint": {
                 "config_hash_sha256": "abc",
@@ -115,6 +116,9 @@ def test_campaign_summary_schema_v5_contains_repro_and_objective_fields(tmp_path
             },
         },
     )
+    campaign.planner_events.append({"trace_id": "trace_1", "applied": False})
+    campaign.policy_reject_count = 1
+    campaign.agentic_interventions = 0
 
     logger = ExperimentLogger(output_dir=str(tmp_path), run_id="run_test")
     summary_path = logger.write_campaign_summary(
@@ -125,7 +129,7 @@ def test_campaign_summary_schema_v5_contains_repro_and_objective_fields(tmp_path
     )
 
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 5
+    assert payload["schema_version"] == 6
     assert payload["runtime"]["throughput_trials_per_second"] > 0
     assert payload["latency"]["mean_seconds"] == pytest.approx(0.15)
     assert payload["pareto_front"]
@@ -133,3 +137,6 @@ def test_campaign_summary_schema_v5_contains_repro_and_objective_fields(tmp_path
     assert payload["reproducibility"]["config_hash_sha256"] == "abc"
     assert payload["objective_summary"]["mode"] == "multi"
     assert payload["run_tag"] == "unit"
+    assert payload["agentic"]["mode"] == "agentic_shadow"
+    assert payload["agentic"]["policy_reject_count"] == 1
+    assert payload["decision_trace"]

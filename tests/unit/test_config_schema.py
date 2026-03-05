@@ -72,3 +72,14 @@ def test_strict_schema_rejects_negative_multi_objective_weight() -> None:
 
     errors = validate_config(config, mode="strict")
     assert any("multi_objective_weights" in item for item in errors)
+
+
+def test_strict_schema_accepts_agentic_config_defaults() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["ai"]["mode"] = "agentic_shadow"
+    config["ai"]["planner_interval_trials"] = 10
+    config["policy"]["max_patch_delta"] = 0.8
+
+    errors = validate_config(config, mode="strict")
+    assert errors == []

@@ -9,7 +9,9 @@
 - **HIL 사전검증 게이트**: `hil-preflight` + `--require-preflight`로 serial 안정성 확인 후 캠페인 실행
 - **RL 학습/평가 경로**: `train-rl` / `eval-rl` + SB3 facade checkpoint/load/eval
 - **BO backend 확장**: `auto|heuristic|botorch|turbo|qnehvi` + objective mode(`single|multi`)
-- **추적 고도화**: campaign summary `schema_version: 5`, 재현성 fingerprint/objective/training 포함
+- **Agentic 제어 계층**: Planner Proposal → Policy Gate → Patch Apply 루프 (`run-agentic`)
+- **지식 계층 베이스라인**: `kb-ingest`/`kb-query` 로컬 지식 저장소
+- **추적 고도화**: campaign summary `schema_version: 6`, decision trace 포함
 - **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
 
 ---

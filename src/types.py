@@ -103,12 +103,77 @@ class TrialResult:
 
 
 @dataclass
+class ContextSnapshot:
+    """Agentic planner 입력 스냅샷."""
+
+    trial_index: int
+    window_size: int
+    success_rate_window: float
+    primitive_rate_window: float
+    timeout_rate_window: float
+    reset_rate_window: float
+    latency_p95_window: float
+    optimizer_backend: str
+    target_name: str
+    created_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class PlannerProposal:
+    """Planner가 생성한 구조화된 제안."""
+
+    proposal_id: str
+    mode: str
+    rationale: str
+    confidence: float
+    changes: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class PolicyVerdict:
+    """정책 엔진 검증 결과."""
+
+    accepted: bool
+    reasons: List[str] = field(default_factory=list)
+    normalized_changes: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class PlannerDecision:
+    """Proposal -> Policy -> Apply 결과 체인."""
+
+    trace_id: str
+    proposal: PlannerProposal
+    verdict: PolicyVerdict
+    applied: bool
+    applied_changes: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=datetime.now)
+
+
+@dataclass
+class ReproEvalResult:
+    """재현성 벤치 평가 요약."""
+
+    suite_name: str
+    target: str
+    success_rate_mean: float
+    primitive_repro_rate_mean: float
+    stable_run_ratio: float
+    passed: bool
+    details: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
 class CampaignResult:
     """실험 캠페인 전체 결과"""
 
     campaign_id: str
     trials: List[TrialResult] = field(default_factory=list)
     config: Dict[str, Any] = field(default_factory=dict)
+    planner_events: List[Dict[str, Any]] = field(default_factory=list)
+    policy_reject_count: int = 0
+    agentic_interventions: int = 0
 
     @property
     def n_trials(self) -> int:

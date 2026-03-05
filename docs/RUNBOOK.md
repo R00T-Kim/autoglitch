@@ -189,7 +189,25 @@ python -m src.cli eval-rl \
   --checkpoint experiments/results/rl_sb3_checkpoint_step_5000_train_final.json
 ```
 
-## 10) 로그 재생/검증
+## 10) Agentic 모드
+```bash
+# shadow: 제안/검증만 기록 (실제 적용 안함)
+python -m src.cli run-agentic \
+  --template experiments/configs/repro_stm32f3.yaml \
+  --ai-mode agentic_shadow \
+  --policy-file configs/policy/default_policy.yaml
+
+# enforced: 정책 통과 patch를 런타임에 적용
+python -m src.cli run-agentic \
+  --template experiments/configs/repro_stm32f3.yaml \
+  --ai-mode agentic_enforced \
+  --policy-file configs/policy/default_policy.yaml
+
+# planner 단일 스텝 점검
+python -m src.cli planner-step --target stm32f3 --ai-mode agentic_enforced
+```
+
+## 11) 로그 재생/검증
 ```bash
 python -m src.cli replay \
   --log experiments/logs/<run_id>.jsonl \
@@ -198,7 +216,7 @@ python -m src.cli replay \
 
 ## 출력 산출물
 - Trial log: `experiments/logs/<run_id>.jsonl`
-- Campaign summary: `experiments/results/campaign_*_<run_id>.json` (`schema_version: 5`)
+- Campaign summary: `experiments/results/campaign_*_<run_id>.json` (`schema_version: 6`)
 - Run manifest: `experiments/results/manifest_<run_id>.json`
 - Repro aggregate: `experiments/results/repro_*.json`
 - Benchmark comparison: `experiments/results/comparison_*.json`
@@ -206,12 +224,14 @@ python -m src.cli replay \
 - Soak summary: `experiments/results/soak_*.json`
 - HIL preflight summary: `experiments/results/hil_preflight_*.json`
 
-### Campaign summary(v5) 핵심 필드
+### Campaign summary(v6) 핵심 필드
 - `runtime.total_seconds`, `runtime.throughput_trials_per_second`
 - `latency.mean_seconds`, `latency.p95_seconds`, `latency.max_seconds`
 - `pareto_front` (signal score vs response latency 비지배 해)
 - `reproducibility.config_hash_sha256`, `reproducibility.git_sha`, `reproducibility.python_version`
 - `objective_summary.mode`, `objective_summary.multi_objective_weights`
+- `agentic.mode`, `agentic.event_count`, `agentic.policy_reject_count`
+- `decision_trace`
 - `training.optimizer_backend`, `training.observed_steps`
 - `optimizer_runtime` (optimizer telemetry snapshot)
 

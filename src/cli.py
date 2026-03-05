@@ -16,8 +16,10 @@ from pathlib import Path
 from statistics import mean
 from typing import Any, Dict, Iterable, List
 
+import numpy as np
 import yaml
 
+from .agentic import AgenticPlanner, DecisionTraceStore, PolicyEngine, apply_policy_patch
 from .classifier import RuleBasedClassifier
 from .config import validate_config
 from .hardware import MockHardware, SerialCommandHardware
@@ -30,7 +32,14 @@ from .orchestrator import ExperimentOrchestrator
 from .plugins import PluginRegistry
 from .runtime import HilPreflightThresholds, RecoveryExecutor, run_hil_preflight
 from .safety import SafetyController
-from .types import ExploitPrimitiveType, GlitchParameters
+from .types import (
+    CampaignResult,
+    ContextSnapshot,
+    ExploitPrimitiveType,
+    GlitchParameters,
+    PlannerDecision,
+    PolicyVerdict,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -92,6 +101,26 @@ def main() -> None:
         _eval_rl_cmd(args)
         return
 
+    if args.command == "run-agentic":
+        _run_agentic_cmd(args)
+        return
+
+    if args.command == "planner-step":
+        _planner_step_cmd(args)
+        return
+
+    if args.command == "eval-suite":
+        _eval_suite_cmd(args)
+        return
+
+    if args.command == "kb-ingest":
+        _kb_ingest_cmd(args)
+        return
+
+    if args.command == "kb-query":
+        _kb_query_cmd(args)
+        return
+
     parser.print_help()
 
 
@@ -116,6 +145,8 @@ def _build_parser() -> argparse.ArgumentParser:
     queue.add_argument("--config-mode", choices=["strict", "legacy"], default=None)
     queue.add_argument("--serial-io", choices=["sync", "async"], default=None)
     queue.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    queue.add_argument("--ai-mode", choices=["off", "advisor", "agentic_shadow", "agentic_enforced"], default=None)
+    queue.add_argument("--policy-file", default=None, help="agentic policy yaml path")
     queue.add_argument("--run-tag", default=None, help="optional run tag applied to queue jobs")
     queue.add_argument(
         "--require-preflight",
@@ -203,6 +234,8 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--serial-timeout", type=float, default=None)
     benchmark.add_argument("--serial-io", choices=["sync", "async"], default=None)
     benchmark.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    benchmark.add_argument("--ai-mode", choices=["off", "advisor", "agentic_shadow", "agentic_enforced"], default=None)
+    benchmark.add_argument("--policy-file", default=None, help="agentic policy yaml path")
     benchmark.add_argument("--require-preflight", action="store_true")
     benchmark.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
     benchmark.add_argument("--success-threshold", type=float, default=0.30)
@@ -250,6 +283,45 @@ def _build_parser() -> argparse.ArgumentParser:
     eval_rl.add_argument("--run-tag", default=None, help="optional run tag for report metadata")
     eval_rl.add_argument("--plugin-dir", action="append", default=[])
 
+    run_agentic = sub.add_parser("run-agentic", help="run campaign with agentic planner/policy loop")
+    _add_run_arguments(run_agentic)
+    run_agentic.set_defaults(ai_mode="agentic_enforced")
+
+    planner_step = sub.add_parser("planner-step", help="generate + validate one planner proposal")
+    planner_step.add_argument("--config", default="configs/default.yaml", help="base config path")
+    planner_step.add_argument("--template", default=None, help="campaign template yaml path")
+    planner_step.add_argument("--target", default="stm32f3", help="target profile name")
+    planner_step.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    planner_step.add_argument("--ai-mode", choices=["off", "advisor", "agentic_shadow", "agentic_enforced"], default=None)
+    planner_step.add_argument("--policy-file", default=None, help="agentic policy yaml path")
+    planner_step.add_argument("--trial-index", type=int, default=50)
+    planner_step.add_argument("--window-size", type=int, default=50)
+    planner_step.add_argument("--success-rate", type=float, default=0.05)
+    planner_step.add_argument("--primitive-rate", type=float, default=0.01)
+    planner_step.add_argument("--timeout-rate", type=float, default=0.02)
+    planner_step.add_argument("--reset-rate", type=float, default=0.01)
+    planner_step.add_argument("--latency-p95", type=float, default=0.2)
+
+    eval_suite = sub.add_parser("eval-suite", help="run reproducibility suite for templates/targets")
+    eval_suite.add_argument("--templates", default="experiments/configs/repro_stm32f3.yaml,experiments/configs/repro_esp32.yaml")
+    eval_suite.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    eval_suite.add_argument("--ai-mode", choices=["off", "advisor", "agentic_shadow", "agentic_enforced"], default="off")
+    eval_suite.add_argument("--policy-file", default=None, help="agentic policy yaml path")
+    eval_suite.add_argument("--success-threshold", type=float, default=0.3)
+    eval_suite.add_argument("--run-tag", default=None)
+
+    kb_ingest = sub.add_parser("kb-ingest", help="ingest a note/file into local knowledge store")
+    kb_ingest.add_argument("--store", default=None, help="override knowledge store jsonl path")
+    kb_ingest.add_argument("--source-file", default=None, help="path to markdown/text file")
+    kb_ingest.add_argument("--text", default=None, help="inline text content")
+    kb_ingest.add_argument("--title", default=None, help="document title")
+    kb_ingest.add_argument("--tags", default="", help="comma-separated tags")
+
+    kb_query = sub.add_parser("kb-query", help="query local knowledge store")
+    kb_query.add_argument("--store", default=None, help="override knowledge store jsonl path")
+    kb_query.add_argument("--query", required=True, help="search query")
+    kb_query.add_argument("--top-k", type=int, default=None, help="override retrieval top-k")
+
     return parser
 
 
@@ -267,6 +339,8 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--optimizer", choices=["bayesian", "rl"], default=None)
     parser.add_argument("--bo-backend", choices=["auto", "heuristic", "botorch", "turbo", "qnehvi"], default=None)
     parser.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    parser.add_argument("--ai-mode", choices=["off", "advisor", "agentic_shadow", "agentic_enforced"], default=None)
+    parser.add_argument("--policy-file", default=None, help="agentic policy yaml path")
     parser.add_argument("--objective", choices=["single", "multi"], default=None)
     parser.add_argument("--enable-llm", action="store_true", help="enable LLM advisor fallback")
     parser.add_argument("--target-primitive", default=None, help="stop early when primitive is reached")
@@ -320,6 +394,8 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
             raise SystemExit(f"HIL preflight failed. report={report_path}")
 
     run_tag = _resolve_run_tag(args, config)
+    ai_mode = _resolve_ai_mode(args, config)
+    policy_file = _resolve_policy_file(args, config)
     objective_mode = str(
         getattr(args, "objective", None)
         or config.get("optimizer", {}).get("bo", {}).get("objective_mode", "single")
@@ -351,6 +427,9 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
         run_config = copy.deepcopy(config)
         run_config.setdefault("experiment", {})["seed"] = run_seed
         run_config.setdefault("logging", {})["run_tag"] = run_tag
+        run_config.setdefault("ai", {})["mode"] = ai_mode
+        if policy_file:
+            run_config.setdefault("ai", {})["policy_file"] = policy_file
         run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = objective_mode
         run_config["_runtime_fingerprint"] = _runtime_fingerprint(
             config_hash_payload=run_config,
@@ -383,6 +462,7 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
             "runs": run_summaries,
             "aggregate": aggregate,
             "run_tag": run_tag,
+            "ai_mode": ai_mode,
         }
         aggregate_report_path = str(_write_json_report("repro", aggregate_report))
 
@@ -391,6 +471,7 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
         "template": template_name,
         "rerun_count": rerun_count,
         "run_tag": run_tag,
+        "ai_mode": ai_mode,
         "objective_mode": objective_mode,
         "runs": run_summaries,
         "aggregate": aggregate,
@@ -457,15 +538,38 @@ def _run_single_campaign(
             "target": str(run_config.get("target", {}).get("name", "unknown")),
             "optimizer": str(optimizer_type),
             "run_tag": str(run_tag or "none"),
+            "ai_mode": str(_resolve_ai_mode(args, run_config)),
         },
         params={
             "seed": run_seed,
             "trials": trials,
             "run_tag": run_tag or "none",
+            "ai_mode": _resolve_ai_mode(args, run_config),
         },
     )
 
-    campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
+    ai_mode = _resolve_ai_mode(args, run_config)
+    policy_file = _resolve_policy_file(args, run_config)
+    if ai_mode == "off":
+        campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
+        agentic_meta = {
+            "mode": "off",
+            "events": [],
+            "policy_reject_count": 0,
+            "agentic_interventions": 0,
+            "trace_report": None,
+        }
+    else:
+        campaign, agentic_meta = _run_campaign_agentic(
+            orchestrator=orchestrator,
+            optimizer=optimizer,
+            run_config=run_config,
+            n_trials=trials,
+            target_primitive=target_primitive,
+            ai_mode=ai_mode,
+            policy_file=policy_file,
+        )
+
     optimizer_telemetry = _snapshot_optimizer_telemetry(optimizer)
     summary_path = logger_viz.write_campaign_summary(
         campaign,
@@ -491,6 +595,7 @@ def _run_single_campaign(
         "run_id": run_id,
         "seed": run_seed,
         "run_tag": run_tag,
+        "ai_mode": ai_mode,
         "campaign_id": campaign.campaign_id,
         "n_trials": campaign.n_trials,
         "success_rate": campaign.success_rate,
@@ -500,6 +605,7 @@ def _run_single_campaign(
         "error_breakdown": campaign.error_breakdown,
         "optimizer_backend": getattr(optimizer, "backend_in_use", optimizer_type),
         "optimizer_telemetry": optimizer_telemetry,
+        "agentic": agentic_meta,
         "circuit_breaker": recovery_executor.breaker.snapshot(),
         "mlflow": mlflow_tracker.snapshot(),
         "report": str(summary_path),
@@ -541,6 +647,8 @@ def _queue_run(args: argparse.Namespace) -> None:
         "config_mode": getattr(args, "config_mode", None),
         "serial_io": getattr(args, "serial_io", None),
         "rl_backend": getattr(args, "rl_backend", None),
+        "ai_mode": getattr(args, "ai_mode", None),
+        "policy_file": getattr(args, "policy_file", None),
         "require_preflight": bool(getattr(args, "require_preflight", False)),
         "run_tag": getattr(args, "run_tag", None),
     }
@@ -660,6 +768,7 @@ def _queue_run(args: argparse.Namespace) -> None:
         "queue": str(queue_path),
         "queue_digest": queue_digest,
         "run_tag": getattr(args, "run_tag", None),
+        "ai_mode": getattr(args, "ai_mode", None),
         "checkpoint_file": str(checkpoint_file),
         "executed_jobs": len(results),
         "completed_jobs": len([job for job in results if job.get("status") == "completed"]),
@@ -780,6 +889,7 @@ def _soak_run(args: argparse.Namespace) -> None:
         "checkpoint_file": str(checkpoint_file),
         "resumed": bool(args.resume),
         "run_tag": getattr(args, "run_tag", None),
+        "ai_mode": getattr(args, "ai_mode", None),
         "objective_mode": getattr(args, "objective", None),
         "new_batches": new_batches,
         "batches": len(runs),
@@ -810,6 +920,7 @@ def _run_benchmark(args: argparse.Namespace) -> None:
 
     plugin_registry = _load_plugin_registry(config, getattr(args, "plugin_dir", []))
     run_tag = _resolve_run_tag(args, config)
+    ai_mode = _resolve_ai_mode(args, config)
     objective_mode = str(getattr(args, "objective", "single")).lower()
     if objective_mode not in {"single", "multi"}:
         objective_mode = "single"
@@ -826,10 +937,12 @@ def _run_benchmark(args: argparse.Namespace) -> None:
             run_args.optimizer = algo
             run_args.enable_llm = False
             run_args.run_tag = run_tag
+            run_args.ai_mode = ai_mode
             run_args.objective = objective_mode
             run_config = copy.deepcopy(config)
             run_config.setdefault("experiment", {})["seed"] = run_seed
             run_config.setdefault("logging", {})["run_tag"] = run_tag
+            run_config.setdefault("ai", {})["mode"] = ai_mode
             run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = objective_mode
 
             summary = _run_single_campaign(
@@ -862,6 +975,7 @@ def _run_benchmark(args: argparse.Namespace) -> None:
         "template": template_name,
         "target": config.get("target", {}).get("name", args.target),
         "algorithms": algorithms,
+        "ai_mode": ai_mode,
         "objective_mode": objective_mode,
         "run_tag": run_tag,
         "runs_per_algorithm": int(args.runs),
@@ -991,6 +1105,224 @@ def _eval_rl_cmd(args: argparse.Namespace) -> None:
     path = _write_json_report("rl_eval", payload)
     payload["report"] = str(path)
     print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+# ---------------------------------------------------------------------------
+# Agentic / Repro suite / Knowledge utilities
+# ---------------------------------------------------------------------------
+
+def _run_agentic_cmd(args: argparse.Namespace) -> None:
+    if getattr(args, "ai_mode", None) is None:
+        args.ai_mode = "agentic_enforced"
+    _run_campaign(args)
+
+
+def _planner_step_cmd(args: argparse.Namespace) -> None:
+    config, template_name = _load_run_config(args)
+    errors = _validate_runtime_config(config, mode=args.config_mode)
+    if errors:
+        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
+
+    ai_mode = _resolve_ai_mode(args, config)
+    planner = AgenticPlanner(
+        mode=ai_mode,
+        max_actions_per_cycle=int(config.get("ai", {}).get("max_actions_per_cycle", 3)),
+    )
+    policy = PolicyEngine.from_sources(
+        config_policy=config.get("policy", {}) if isinstance(config.get("policy", {}), dict) else {},
+        policy_file=_resolve_policy_file(args, config),
+        ai_limits=config.get("ai", {}) if isinstance(config.get("ai", {}), dict) else {},
+    )
+    snapshot = ContextSnapshot(
+        trial_index=max(1, int(args.trial_index)),
+        window_size=max(1, int(args.window_size)),
+        success_rate_window=max(0.0, min(1.0, float(args.success_rate))),
+        primitive_rate_window=max(0.0, min(1.0, float(args.primitive_rate))),
+        timeout_rate_window=max(0.0, min(1.0, float(args.timeout_rate))),
+        reset_rate_window=max(0.0, min(1.0, float(args.reset_rate))),
+        latency_p95_window=max(0.0, float(args.latency_p95)),
+        optimizer_backend=str(config.get("optimizer", {}).get("type", "bayesian")),
+        target_name=str(config.get("target", {}).get("name", args.target)),
+    )
+    proposal = planner.propose(snapshot=snapshot, config=config)
+    verdict = policy.evaluate(proposal=proposal, current_config=config)
+    payload = {
+        "schema_version": 1,
+        "template": template_name,
+        "ai_mode": ai_mode,
+        "snapshot": {
+            "trial_index": snapshot.trial_index,
+            "window_size": snapshot.window_size,
+            "success_rate_window": snapshot.success_rate_window,
+            "primitive_rate_window": snapshot.primitive_rate_window,
+            "timeout_rate_window": snapshot.timeout_rate_window,
+            "reset_rate_window": snapshot.reset_rate_window,
+            "latency_p95_window": snapshot.latency_p95_window,
+            "optimizer_backend": snapshot.optimizer_backend,
+            "target_name": snapshot.target_name,
+        },
+        "proposal": {
+            "proposal_id": proposal.proposal_id,
+            "rationale": proposal.rationale,
+            "confidence": proposal.confidence,
+            "changes": proposal.changes,
+        },
+        "policy_verdict": {
+            "accepted": verdict.accepted,
+            "reasons": verdict.reasons,
+            "normalized_changes": verdict.normalized_changes,
+        },
+    }
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def _eval_suite_cmd(args: argparse.Namespace) -> None:
+    templates = [item.strip() for item in str(args.templates).split(",") if item.strip()]
+    if not templates:
+        raise SystemExit("no templates provided")
+
+    results: List[Dict[str, Any]] = []
+    for template in templates:
+        run_args = argparse.Namespace(
+            config="configs/default.yaml",
+            template=template,
+            config_mode=args.config_mode,
+            target="stm32f3",
+            trials=None,
+            optimizer=None,
+            bo_backend=None,
+            rl_backend=None,
+            ai_mode=args.ai_mode,
+            policy_file=args.policy_file,
+            objective=None,
+            enable_llm=False,
+            target_primitive=None,
+            hardware=None,
+            serial_port=None,
+            serial_timeout=None,
+            serial_io=None,
+            require_preflight=False,
+            rerun_count=None,
+            fixed_seed=None,
+            success_threshold=args.success_threshold,
+            run_tag=args.run_tag,
+            plugin_dir=[],
+        )
+        output = _execute_campaign(run_args)
+        aggregate = output.get("aggregate", {})
+        score = float(aggregate.get("primitive_repro_rate_mean", 0.0))
+        stable = float(aggregate.get("stable_run_ratio", 0.0))
+        passed = score >= float(args.success_threshold)
+        results.append(
+            {
+                "template": template,
+                "target": output.get("template") or template,
+                "primitive_repro_rate_mean": score,
+                "stable_run_ratio": stable,
+                "passed": passed,
+                "raw": output,
+            }
+        )
+
+    pass_count = len([item for item in results if item["passed"]])
+    payload = {
+        "schema_version": 1,
+        "created_at": datetime.now().isoformat(),
+        "suite_size": len(results),
+        "pass_count": pass_count,
+        "pass_ratio": (pass_count / len(results)) if results else 0.0,
+        "success_threshold": float(args.success_threshold),
+        "results": results,
+    }
+    path = _write_json_report("eval_suite", payload)
+    payload["report"] = str(path)
+    print(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
+def _kb_ingest_cmd(args: argparse.Namespace) -> None:
+    config = _load_config(Path("configs/default.yaml"), "stm32f3")
+    default_store = str(config.get("knowledge", {}).get("store_path", "data/knowledge/kb.jsonl"))
+    store = Path(args.store or default_store)
+    store.parent.mkdir(parents=True, exist_ok=True)
+
+    content = ""
+    if args.source_file:
+        source = Path(args.source_file)
+        if not source.exists():
+            raise SystemExit(f"source file not found: {source}")
+        content = source.read_text(encoding="utf-8")
+    elif args.text:
+        content = str(args.text)
+    else:
+        raise SystemExit("provide --source-file or --text")
+
+    tags = [tag.strip() for tag in str(args.tags).split(",") if tag.strip()]
+    record = {
+        "id": f"kb_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}",
+        "title": args.title or (Path(args.source_file).name if args.source_file else "inline-note"),
+        "tags": tags,
+        "content": content,
+        "created_at": datetime.now().isoformat(),
+    }
+    with store.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+    print(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "store": str(store),
+                "ingested_id": record["id"],
+                "title": record["title"],
+                "tags": tags,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
+
+
+def _kb_query_cmd(args: argparse.Namespace) -> None:
+    config = _load_config(Path("configs/default.yaml"), "stm32f3")
+    default_store = str(config.get("knowledge", {}).get("store_path", "data/knowledge/kb.jsonl"))
+    top_k_default = int(config.get("knowledge", {}).get("retrieval_top_k", 5))
+    top_k = max(1, int(args.top_k or top_k_default))
+
+    store = Path(args.store or default_store)
+    if not store.exists():
+        raise SystemExit(f"knowledge store not found: {store}")
+
+    query_terms = [term for term in str(args.query).lower().split() if term]
+    scored: List[Dict[str, Any]] = []
+    with store.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            line = line.strip()
+            if not line:
+                continue
+            row = json.loads(line)
+            text = f"{row.get('title', '')} {row.get('content', '')}".lower()
+            score = 0.0
+            for term in query_terms:
+                score += text.count(term)
+            if score > 0:
+                row["score"] = score
+                scored.append(row)
+
+    scored.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
+    hits = scored[:top_k]
+    print(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "store": str(store),
+                "query": args.query,
+                "top_k": top_k,
+                "hits": hits,
+            },
+            indent=2,
+            ensure_ascii=False,
+        )
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1249,6 +1581,150 @@ def compare_summary_to_report(summary: Dict[str, Any], report: Dict[str, Any]) -
 
 
 # ---------------------------------------------------------------------------
+# Agentic control
+# ---------------------------------------------------------------------------
+
+def _run_campaign_agentic(
+    *,
+    orchestrator: ExperimentOrchestrator,
+    optimizer: Any,
+    run_config: Dict[str, Any],
+    n_trials: int,
+    target_primitive: ExploitPrimitiveType | None,
+    ai_mode: str,
+    policy_file: str | None,
+) -> tuple[CampaignResult, Dict[str, Any]]:
+    ai_cfg = run_config.get("ai", {}) if isinstance(run_config.get("ai", {}), dict) else {}
+    interval = max(1, int(ai_cfg.get("planner_interval_trials", 50)))
+    confidence_threshold = float(ai_cfg.get("confidence_threshold", 0.25))
+    planner = AgenticPlanner(
+        mode=ai_mode,
+        max_actions_per_cycle=int(ai_cfg.get("max_actions_per_cycle", 3)),
+    )
+    policy = PolicyEngine.from_sources(
+        config_policy=run_config.get("policy", {}) if isinstance(run_config.get("policy", {}), dict) else {},
+        policy_file=policy_file,
+        ai_limits=ai_cfg,
+    )
+    trace_store = DecisionTraceStore()
+
+    campaign = CampaignResult(
+        campaign_id=f"campaign_{getattr(orchestrator, '_trial_count', 0) + 1}",
+        config=run_config,
+    )
+
+    for idx in range(n_trials):
+        trial = orchestrator.run_trial()
+        campaign.trials.append(trial)
+
+        if target_primitive and trial.primitive.type == target_primitive:
+            break
+
+        if (idx + 1) % interval != 0:
+            continue
+
+        snapshot = _build_context_snapshot(
+            campaign=campaign,
+            optimizer=optimizer,
+            window_size=interval,
+            run_config=run_config,
+        )
+        proposal = planner.propose(snapshot=snapshot, config=run_config)
+
+        if proposal.confidence < confidence_threshold:
+            verdict = PolicyVerdict(
+                accepted=False,
+                reasons=["below_confidence_threshold"],
+                normalized_changes={},
+            )
+        else:
+            verdict = policy.evaluate(proposal=proposal, current_config=run_config)
+
+        applied = False
+        applied_changes: Dict[str, Any] = {}
+        if ai_mode == "agentic_enforced" and verdict.accepted:
+            patch_meta = apply_policy_patch(
+                config=run_config,
+                optimizer=optimizer,
+                normalized_changes=verdict.normalized_changes,
+            )
+            applied_changes = patch_meta.get("applied", {})
+            applied = bool(applied_changes)
+
+        decision = PlannerDecision(
+            trace_id=f"trace_{idx + 1}_{len(campaign.planner_events) + 1}",
+            proposal=proposal,
+            verdict=verdict,
+            applied=applied,
+            applied_changes=applied_changes,
+        )
+        payload = trace_store.append(decision)
+        campaign.planner_events.append(payload)
+        if not verdict.accepted:
+            campaign.policy_reject_count += 1
+        if applied:
+            campaign.agentic_interventions += 1
+
+    trace_report = trace_store.write_report() if campaign.planner_events else None
+    return campaign, {
+        "mode": ai_mode,
+        "events": campaign.planner_events,
+        "policy_reject_count": campaign.policy_reject_count,
+        "agentic_interventions": campaign.agentic_interventions,
+        "trace_report": str(trace_report) if trace_report else None,
+    }
+
+
+def _build_context_snapshot(
+    *,
+    campaign: CampaignResult,
+    optimizer: Any,
+    window_size: int,
+    run_config: Dict[str, Any],
+) -> ContextSnapshot:
+    trials = campaign.trials[-max(1, int(window_size)) :]
+    if not trials:
+        return ContextSnapshot(
+            trial_index=0,
+            window_size=max(1, int(window_size)),
+            success_rate_window=0.0,
+            primitive_rate_window=0.0,
+            timeout_rate_window=0.0,
+            reset_rate_window=0.0,
+            latency_p95_window=0.0,
+            optimizer_backend=str(getattr(optimizer, "backend_in_use", type(optimizer).__name__)),
+            target_name=str(run_config.get("target", {}).get("name", "unknown")),
+        )
+
+    total = float(len(trials))
+    success_count = sum(
+        1
+        for trial in trials
+        if trial.fault_class.name not in {"NORMAL", "RESET", "UNKNOWN"}
+    )
+    primitive_count = sum(1 for trial in trials if trial.primitive.type.name != "NONE")
+    timeout_count = sum(1 for trial in trials if not trial.observation.raw.serial_output)
+    reset_count = sum(1 for trial in trials if trial.observation.raw.reset_detected)
+    latencies = [
+        max(0.0, float(trial.observation.raw.response_time))
+        for trial in trials
+    ]
+    latency_p95 = float(np.percentile(np.array(latencies, dtype=float), 95)) if latencies else 0.0
+
+    return ContextSnapshot(
+        trial_index=campaign.n_trials,
+        window_size=len(trials),
+        success_rate_window=success_count / total,
+        primitive_rate_window=primitive_count / total,
+        timeout_rate_window=timeout_count / total,
+        reset_rate_window=reset_count / total,
+        latency_p95_window=latency_p95,
+        optimizer_backend=str(getattr(optimizer, "backend_in_use", type(optimizer).__name__)),
+        target_name=str(run_config.get("target", {}).get("name", "unknown")),
+    )
+
+
+# ---------------------------------------------------------------------------
 # Utility helpers
 # ---------------------------------------------------------------------------
 
@@ -1450,6 +1926,8 @@ def _build_run_namespace(options: Dict[str, Any], cli_plugin_dirs: Iterable[str]
         optimizer=options.get("optimizer"),
         bo_backend=options.get("bo_backend"),
         rl_backend=options.get("rl_backend"),
+        ai_mode=options.get("ai_mode"),
+        policy_file=options.get("policy_file"),
         objective=options.get("objective"),
         enable_llm=bool(options.get("enable_llm", False)),
         target_primitive=options.get("target_primitive"),
@@ -1631,6 +2109,8 @@ def _execute_soak_batch(
         optimizer=args.optimizer,
         bo_backend=args.bo_backend,
         rl_backend=getattr(args, "rl_backend", None),
+        ai_mode=getattr(args, "ai_mode", None),
+        policy_file=getattr(args, "policy_file", None),
         objective=getattr(args, "objective", None),
         enable_llm=args.enable_llm,
         target_primitive=args.target_primitive,
@@ -1697,6 +2177,8 @@ def _build_soak_resume_key(args: argparse.Namespace) -> str:
         "optimizer": args.optimizer,
         "bo_backend": args.bo_backend,
         "rl_backend": getattr(args, "rl_backend", None),
+        "ai_mode": getattr(args, "ai_mode", None),
+        "policy_file": getattr(args, "policy_file", None),
         "objective": getattr(args, "objective", None),
         "enable_llm": bool(args.enable_llm),
         "target_primitive": args.target_primitive,
@@ -1842,6 +2324,29 @@ def _resolve_run_tag(args: argparse.Namespace, config: Dict[str, Any]) -> str | 
     logging_tag = config.get("logging", {}).get("run_tag")
     if logging_tag:
         return str(logging_tag)
+    return None
+
+
+def _resolve_ai_mode(args: argparse.Namespace, config: Dict[str, Any]) -> str:
+    cli_mode = getattr(args, "ai_mode", None)
+    if cli_mode:
+        return str(cli_mode)
+    cfg_mode = config.get("ai", {}).get("mode")
+    if isinstance(cfg_mode, str) and cfg_mode:
+        return cfg_mode
+    return "off"
+
+
+def _resolve_policy_file(args: argparse.Namespace, config: Dict[str, Any]) -> str | None:
+    cli_policy = getattr(args, "policy_file", None)
+    if cli_policy:
+        return str(cli_policy)
+    cfg_policy = config.get("ai", {}).get("policy_file")
+    if isinstance(cfg_policy, str) and cfg_policy:
+        return cfg_policy
+    default_policy = Path("configs/policy/default_policy.yaml")
+    if default_policy.exists():
+        return str(default_policy)
     return None
 
 
