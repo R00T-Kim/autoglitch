@@ -163,3 +163,23 @@ class CampaignResult:
 
         max_hits = max(primitive_dist.values())
         return max_hits / len(self.trials)
+
+    @property
+    def runtime_total_seconds(self) -> float:
+        """Elapsed campaign duration based on trial timestamps."""
+        if len(self.trials) < 2:
+            return 0.0
+        start = self.trials[0].timestamp
+        end = self.trials[-1].timestamp
+        return max(0.0, (end - start).total_seconds())
+
+    @property
+    def error_breakdown(self) -> Dict[str, int]:
+        """Distribution of orchestrator error categories from trial metadata."""
+        dist: Dict[str, int] = {}
+        for trial in self.trials:
+            category = "none"
+            if isinstance(trial.metadata, dict):
+                category = str(trial.metadata.get("error_category", "none"))
+            dist[category] = dist.get(category, 0) + 1
+        return dist

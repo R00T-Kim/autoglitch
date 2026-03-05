@@ -2,6 +2,14 @@
 
 > **"LLM이 못하는 하드웨어 해킹을 AI가 하게 만드는"** closed-loop 자동 글리칭 시스템
 
+## 최근 소프트웨어 업데이트 (2026-03-05)
+
+- **Strict Config 계층**: `pydantic` 기반 strict schema 검증 (`--config-mode strict|legacy`)
+- **Serial I/O 모드 분리**: `sync`(기본) + `async` 옵션 (`--serial-io async`)
+- **RL 백엔드 선택**: `lite`(기본) + `sb3` facade (`--rl-backend sb3`)
+- **추적 고도화**: campaign summary `schema_version: 3`, `runtime.total_seconds`, `error_breakdown`, `mlflow` 메타데이터 포함
+- **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
+
 ---
 
 ## 목차

@@ -1,0 +1,5 @@
+* @R00T-Kim
+
+# Security-sensitive workflow paths
+.github/workflows/* @R00T-Kim
+.github/dependabot.yml @R00T-Kim

@@ -4,6 +4,10 @@
 ```bash
 python -m src.cli validate-config --config configs/default.yaml --target stm32f3
 python -m src.cli list-plugins
+
+# strict schema(기본) / legacy validator 비교
+python -m src.cli validate-config --target stm32f3 --config-mode strict
+python -m src.cli validate-config --target stm32f3 --config-mode legacy
 ```
 
 ## 1.5) 소프트웨어 전용 serial 에뮬레이션 (장비 없이)
@@ -17,6 +21,7 @@ python -m src.tools.mock_glitch_bridge --port-file /tmp/autoglitch_mock_bridge.p
 python -m src.cli run \
   --target stm32f3 \
   --hardware serial \
+  --serial-io async \
   --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)" \
   --trials 20
 ```
@@ -130,6 +135,7 @@ jobs:
 python -m src.cli benchmark \
   --template experiments/configs/repro_stm32f3.yaml \
   --algorithms bayesian,rl \
+  --rl-backend sb3 \
   --runs 5 \
   --trials 200
 ```

@@ -3,9 +3,29 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
+from .schema import validate_autoglitch_config
 
-def validate_config(config: Dict[str, Any]) -> List[str]:
-    """Return list of validation errors. Empty means valid."""
+
+def validate_config(config: Dict[str, Any], mode: str = "strict") -> List[str]:
+    """Return list of validation errors. Empty means valid.
+
+    Args:
+        config: Raw merged config payload.
+        mode: Validation mode. ``strict`` uses the pydantic schema and ``legacy``
+            uses the historical lightweight validator.
+    """
+    normalized_mode = str(mode or "strict").lower()
+    if normalized_mode not in {"strict", "legacy"}:
+        return [f"config validation mode must be one of: strict, legacy (got: {mode})"]
+
+    if normalized_mode == "strict":
+        return validate_autoglitch_config(config)
+
+    return _validate_config_legacy(config)
+
+
+def _validate_config_legacy(config: Dict[str, Any]) -> List[str]:
+    """Legacy hand-written validator kept for backward compatibility."""
     errors: List[str] = []
 
     config_version = config.get("config_version", 1)

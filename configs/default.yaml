@@ -17,7 +17,11 @@ optimizer:
     backend: auto
   rl:
     algorithm: ppo
-    learning_rate: 3e-4
+    learning_rate: 0.0003
+    backend: lite
+    total_timesteps: 20000
+    train_interval: 32
+    checkpoint_interval: 5000
 hardware:
   mode: mock
   glitcher:
@@ -34,6 +38,8 @@ hardware:
     repeat={repeat:d} ext_offset={ext_offset:.3f}
   reset_command: ''
   trigger_command: ''
+  serial:
+    io_mode: sync
 glitch:
   parameters:
     width:
@@ -77,6 +83,10 @@ logging:
   level: INFO
   save_waveforms: false
   mlflow_tracking_uri: mlruns
+  mlflow:
+    enabled: false
+    tracking_uri: mlruns
+    experiment_name: autoglitch
 recovery:
   retry:
     max_attempts: 3

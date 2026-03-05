@@ -1,0 +1,240 @@
+"""Strict configuration schema and validation helpers."""
+from __future__ import annotations
+
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+
+
+class _BaseStrictModel(BaseModel):
+    """Base model with strict typing while allowing forward-compatible keys."""
+
+    model_config = ConfigDict(strict=True, extra="allow")
+
+
+class RangeSpec(_BaseStrictModel):
+    min: float | int
+    max: float | int
+    step: float | int | None = None
+
+    @model_validator(mode="after")
+    def _validate_bounds(self) -> "RangeSpec":
+        if float(self.min) > float(self.max):
+            raise ValueError("min must be <= max")
+        if self.step is not None and float(self.step) <= 0:
+            raise ValueError("step must be > 0")
+        return self
+
+
+class ExperimentConfig(_BaseStrictModel):
+    name: str = "default"
+    seed: int = 42
+    max_trials: int = 10_000
+    rerun_count: int = 1
+    fixed_seed: int | None = None
+    success_threshold: float = 0.3
+
+    @model_validator(mode="after")
+    def _validate_positive_values(self) -> "ExperimentConfig":
+        if self.max_trials <= 0:
+            raise ValueError("max_trials must be > 0")
+        if self.rerun_count <= 0:
+            raise ValueError("rerun_count must be > 0")
+        if not 0.0 <= self.success_threshold <= 1.0:
+            raise ValueError("success_threshold must be in [0, 1]")
+        return self
+
+
+class OptimizerBOConfig(_BaseStrictModel):
+    n_initial: int = 50
+    acquisition: str = "ei"
+    backend: Literal["auto", "heuristic", "botorch"] = "auto"
+
+    @field_validator("n_initial")
+    @classmethod
+    def _validate_n_initial(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("n_initial must be > 0")
+        return value
+
+
+class OptimizerRLConfig(_BaseStrictModel):
+    algorithm: str = "ppo"
+    learning_rate: float = 3e-4
+    backend: Literal["lite", "sb3"] = "lite"
+    total_timesteps: int = 20_000
+    train_interval: int = 32
+    checkpoint_interval: int = 5_000
+
+    @model_validator(mode="after")
+    def _validate_positive_values(self) -> "OptimizerRLConfig":
+        if self.learning_rate <= 0:
+            raise ValueError("learning_rate must be > 0")
+        if self.total_timesteps <= 0:
+            raise ValueError("total_timesteps must be > 0")
+        if self.train_interval <= 0:
+            raise ValueError("train_interval must be > 0")
+        if self.checkpoint_interval <= 0:
+            raise ValueError("checkpoint_interval must be > 0")
+        return self
+
+
+class OptimizerConfig(_BaseStrictModel):
+    type: Literal["bayesian", "rl"] = "bayesian"
+    bo: OptimizerBOConfig = Field(default_factory=OptimizerBOConfig)
+    rl: OptimizerRLConfig = Field(default_factory=OptimizerRLConfig)
+
+
+class HardwareTargetConfig(_BaseStrictModel):
+    type: str = "stm32f3"
+    port: Optional[str] = None
+    baudrate: int = 115_200
+    timeout: float = 1.0
+
+    @model_validator(mode="after")
+    def _validate_target_values(self) -> "HardwareTargetConfig":
+        if self.baudrate <= 0:
+            raise ValueError("baudrate must be > 0")
+        if self.timeout <= 0:
+            raise ValueError("timeout must be > 0")
+        return self
+
+
+class HardwareSerialConfig(_BaseStrictModel):
+    io_mode: Literal["sync", "async"] = "sync"
+
+
+class HardwareConfig(_BaseStrictModel):
+    mode: Literal["mock", "serial"] = "mock"
+    target: HardwareTargetConfig = Field(default_factory=HardwareTargetConfig)
+    serial_command_template: str = (
+        "GLITCH width={width:.3f} offset={offset:.3f} "
+        "voltage={voltage:.3f} repeat={repeat:d} ext_offset={ext_offset:.3f}"
+    )
+    reset_command: str = ""
+    trigger_command: str = ""
+    serial: HardwareSerialConfig = Field(default_factory=HardwareSerialConfig)
+
+
+class GlitchParametersConfig(_BaseStrictModel):
+    width: RangeSpec
+    offset: RangeSpec
+    voltage: RangeSpec
+    repeat: RangeSpec
+
+
+class GlitchConfig(_BaseStrictModel):
+    parameters: GlitchParametersConfig
+
+
+class SafetyConfig(_BaseStrictModel):
+    width_min: float = 0.0
+    width_max: float = 50.0
+    offset_min: float = 0.0
+    offset_max: float = 50.0
+    voltage_abs_max: float = 1.0
+    repeat_min: int = 1
+    repeat_max: int = 10
+    min_cooldown_s: float = 0.0
+    max_trials_per_minute: int | None = None
+    auto_throttle: bool = True
+
+    @model_validator(mode="after")
+    def _validate_safety(self) -> "SafetyConfig":
+        if self.width_min > self.width_max:
+            raise ValueError("width_min must be <= width_max")
+        if self.offset_min > self.offset_max:
+            raise ValueError("offset_min must be <= offset_max")
+        if self.repeat_min > self.repeat_max:
+            raise ValueError("repeat_min must be <= repeat_max")
+        if self.voltage_abs_max <= 0:
+            raise ValueError("voltage_abs_max must be > 0")
+        if self.min_cooldown_s < 0:
+            raise ValueError("min_cooldown_s must be >= 0")
+        if self.max_trials_per_minute is not None and self.max_trials_per_minute <= 0:
+            raise ValueError("max_trials_per_minute must be > 0")
+        return self
+
+
+class MLflowConfig(_BaseStrictModel):
+    enabled: bool = False
+    tracking_uri: str | None = None
+    experiment_name: str = "autoglitch"
+
+
+class LoggingConfig(_BaseStrictModel):
+    level: str = "INFO"
+    save_waveforms: bool = False
+    mlflow_tracking_uri: str | None = None  # legacy key
+    mlflow: MLflowConfig = Field(default_factory=MLflowConfig)
+
+
+class PluginsConfig(_BaseStrictModel):
+    manifest_dirs: List[str] = Field(default_factory=list)
+
+
+class TargetConfig(_BaseStrictModel):
+    name: str
+
+
+class AutoglitchConfig(_BaseStrictModel):
+    config_version: int = 1
+    experiment: ExperimentConfig
+    optimizer: OptimizerConfig
+    glitch: GlitchConfig
+    hardware: HardwareConfig
+    target: TargetConfig
+    safety: SafetyConfig = Field(default_factory=SafetyConfig)
+    logging: LoggingConfig = Field(default_factory=LoggingConfig)
+    plugins: PluginsConfig = Field(default_factory=PluginsConfig)
+
+    @field_validator("config_version")
+    @classmethod
+    def _validate_version(cls, value: int) -> int:
+        if value != 1:
+            raise ValueError("unsupported config_version (expected 1)")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_parameter_relationships(self) -> "AutoglitchConfig":
+        glitch = self.glitch.parameters
+
+        if self.safety.width_min < float(glitch.width.min) or self.safety.width_max > float(glitch.width.max):
+            raise ValueError("safety.width range must be within glitch.parameters.width range")
+
+        if self.safety.offset_min < float(glitch.offset.min) or self.safety.offset_max > float(glitch.offset.max):
+            raise ValueError("safety.offset range must be within glitch.parameters.offset range")
+
+        repeat_min = int(glitch.repeat.min)
+        repeat_max = int(glitch.repeat.max)
+        if self.safety.repeat_min < repeat_min or self.safety.repeat_max > repeat_max:
+            raise ValueError("safety.repeat range must be within glitch.parameters.repeat range")
+
+        voltage_abs = max(abs(float(glitch.voltage.min)), abs(float(glitch.voltage.max)))
+        if self.safety.voltage_abs_max > voltage_abs:
+            raise ValueError("safety.voltage_abs_max must be <= glitch.parameters.voltage abs range")
+
+        return self
+
+
+def parse_autoglitch_config(config: Dict[str, Any]) -> AutoglitchConfig:
+    """Parse and return strongly-typed AUTOGTLICH configuration."""
+    return AutoglitchConfig.model_validate(config)
+
+
+def validate_autoglitch_config(config: Dict[str, Any]) -> List[str]:
+    """Validate config and return user-friendly error messages."""
+    try:
+        parse_autoglitch_config(config)
+    except ValidationError as exc:
+        errors: List[str] = []
+        for item in exc.errors():
+            loc = ".".join(str(part) for part in item.get("loc", []))
+            msg = item.get("msg", "invalid value")
+            if loc:
+                errors.append(f"{loc}: {msg}")
+            else:
+                errors.append(msg)
+        return errors
+
+    return []

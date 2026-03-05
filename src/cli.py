@@ -19,10 +19,10 @@ from .classifier import RuleBasedClassifier
 from .config import validate_config
 from .hardware import MockHardware, SerialCommandHardware
 from .llm_advisor import LLMAdvisor
-from .logging_viz import ExperimentLogger
+from .logging_viz import ExperimentLogger, MLflowTracker
 from .mapper import PrimitiveMapper
 from .observer import BasicObserver
-from .optimizer import BayesianOptimizer, RLOptimizer
+from .optimizer import BayesianOptimizer, RLOptimizer, SB3Optimizer
 from .orchestrator import ExperimentOrchestrator
 from .plugins import PluginRegistry
 from .runtime import RecoveryExecutor
@@ -98,6 +98,9 @@ def _build_parser() -> argparse.ArgumentParser:
     queue = sub.add_parser("queue-run", help="run jobs from queue yaml")
     queue.add_argument("--queue", required=True, help="queue YAML path")
     queue.add_argument("--plugin-dir", action="append", default=[], help="extra plugin manifest directory")
+    queue.add_argument("--config-mode", choices=["strict", "legacy"], default=None)
+    queue.add_argument("--serial-io", choices=["sync", "async"], default=None)
+    queue.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
     queue.add_argument(
         "--checkpoint-file",
         default=None,
@@ -154,6 +157,12 @@ def _build_parser() -> argparse.ArgumentParser:
     validate.add_argument("--config", default="configs/default.yaml", help="base config path")
     validate.add_argument("--template", default=None, help="campaign template yaml path")
     validate.add_argument("--target", default="stm32f3", help="target profile name")
+    validate.add_argument(
+        "--config-mode",
+        choices=["strict", "legacy"],
+        default="strict",
+        help="config validation mode (default: strict)",
+    )
 
     plugins = sub.add_parser("list-plugins", help="list plugin manifests")
     plugins.add_argument("--kind", default=None, help="filter by plugin kind")
@@ -170,6 +179,9 @@ def _build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--hardware", choices=["mock", "serial"], default=None)
     benchmark.add_argument("--serial-port", default=None)
     benchmark.add_argument("--serial-timeout", type=float, default=None)
+    benchmark.add_argument("--serial-io", choices=["sync", "async"], default=None)
+    benchmark.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
+    benchmark.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
     benchmark.add_argument("--success-threshold", type=float, default=0.30)
     benchmark.add_argument("--plugin-dir", action="append", default=[])
 
@@ -183,15 +195,23 @@ def _build_parser() -> argparse.ArgumentParser:
 def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--config", default="configs/default.yaml", help="base config path")
     parser.add_argument("--template", default=None, help="campaign template yaml path")
+    parser.add_argument(
+        "--config-mode",
+        choices=["strict", "legacy"],
+        default="strict",
+        help="config validation mode (default: strict)",
+    )
     parser.add_argument("--target", default="stm32f3", help="target profile name (stm32f3, esp32)")
     parser.add_argument("--trials", type=int, default=None, help="number of campaign trials")
     parser.add_argument("--optimizer", choices=["bayesian", "rl"], default=None)
     parser.add_argument("--bo-backend", choices=["auto", "heuristic", "botorch"], default=None)
+    parser.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
     parser.add_argument("--enable-llm", action="store_true", help="enable LLM advisor fallback")
     parser.add_argument("--target-primitive", default=None, help="stop early when primitive is reached")
     parser.add_argument("--hardware", choices=["mock", "serial"], default=None)
     parser.add_argument("--serial-port", default=None, help="override serial target port")
     parser.add_argument("--serial-timeout", type=float, default=None, help="override serial timeout")
+    parser.add_argument("--serial-io", choices=["sync", "async"], default=None, help="serial IO mode override")
     parser.add_argument("--rerun-count", type=int, default=None, help="repeat same campaign N times")
     parser.add_argument("--fixed-seed", type=int, default=None, help="base seed for reproducibility runs")
     parser.add_argument(
@@ -219,7 +239,8 @@ def _run_campaign(args: argparse.Namespace) -> None:
 
 def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
     config, template_name = _load_run_config(args)
-    errors = _validate_runtime_config(config)
+    config_mode = getattr(args, "config_mode", "strict")
+    errors = _validate_runtime_config(config, mode=config_mode)
     if errors:
         raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
 
@@ -305,12 +326,14 @@ def _run_single_campaign(
         config=run_config,
         param_space=param_space,
         bo_backend=getattr(args, "bo_backend", None),
+        rl_backend=getattr(args, "rl_backend", None),
     )
 
     observer = BasicObserver()
     classifier = RuleBasedClassifier()
     mapper = PrimitiveMapper()
     logger_viz = ExperimentLogger(run_id=run_id)
+    mlflow_tracker = _create_mlflow_tracker(run_config)
     hardware = _create_hardware(args=args, config=run_config, seed=run_seed)
     llm = LLMAdvisor() if getattr(args, "enable_llm", False) else None
     safety_controller = SafetyController.from_config(run_config)
@@ -332,9 +355,34 @@ def _run_single_campaign(
         recovery_executor=recovery_executor,
     )
 
+    mlflow_tracker.start_run(
+        run_name=run_id,
+        tags={
+            "target": str(run_config.get("target", {}).get("name", "unknown")),
+            "optimizer": str(optimizer_type),
+        },
+        params={
+            "seed": run_seed,
+            "trials": trials,
+        },
+    )
+
     campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
-    summary_path = logger_viz.write_campaign_summary(campaign)
+    summary_path = logger_viz.write_campaign_summary(campaign, mlflow_info=mlflow_tracker.snapshot())
     manifest_path = logger_viz.write_run_manifest(run_config, plugin_snapshot=plugin_registry.snapshot())
+
+    mlflow_tracker.log_metrics(
+        {
+            "success_rate": campaign.success_rate,
+            "primitive_repro_rate": campaign.primitive_repro_rate,
+            "runtime_total_seconds": campaign.runtime_total_seconds,
+        },
+        step=campaign.n_trials,
+    )
+    mlflow_tracker.log_artifact(summary_path)
+    mlflow_tracker.log_artifact(manifest_path)
+    mlflow_tracker.log_artifact(logger_viz.log_path)
+    mlflow_tracker.end_run(status="FINISHED")
 
     return {
         "run_id": run_id,
@@ -344,8 +392,11 @@ def _run_single_campaign(
         "success_rate": campaign.success_rate,
         "primitive_repro_rate": campaign.primitive_repro_rate,
         "time_to_first_primitive": campaign.time_to_first_primitive,
+        "runtime_total_seconds": campaign.runtime_total_seconds,
+        "error_breakdown": campaign.error_breakdown,
         "optimizer_backend": getattr(optimizer, "backend_in_use", optimizer_type),
         "circuit_breaker": recovery_executor.breaker.snapshot(),
+        "mlflow": mlflow_tracker.snapshot(),
         "report": str(summary_path),
         "manifest": str(manifest_path),
         "log": str(logger_viz.log_path),
@@ -380,6 +431,12 @@ def _queue_run(args: argparse.Namespace) -> None:
 
     if args.max_workers > 1 and _queue_has_serial_jobs(prepared_jobs, defaults) and not args.allow_parallel_serial:
         raise SystemExit("parallel serial queue is blocked by default; add --allow-parallel-serial to override")
+
+    cli_overrides = {
+        "config_mode": getattr(args, "config_mode", None),
+        "serial_io": getattr(args, "serial_io", None),
+        "rl_backend": getattr(args, "rl_backend", None),
+    }
 
     checkpoint_file = _resolve_queue_checkpoint_path(args.checkpoint_file, queue_path)
     queue_digest = hashlib.sha256(queue_path.read_bytes()).hexdigest()
@@ -424,7 +481,12 @@ def _queue_run(args: argparse.Namespace) -> None:
 
     if args.max_workers == 1:
         for item in pending_items:
-            job_key, record = _execute_queue_job(item=item, defaults=defaults, cli_plugin_dirs=args.plugin_dir)
+            job_key, record = _execute_queue_job(
+                item=item,
+                defaults=defaults,
+                cli_plugin_dirs=args.plugin_dir,
+                cli_overrides=cli_overrides,
+            )
             record["_order"] = order_lookup[job_key]
             results.append(record)
             if record["status"] == "completed":
@@ -455,6 +517,7 @@ def _queue_run(args: argparse.Namespace) -> None:
                     item=item,
                     defaults=defaults,
                     cli_plugin_dirs=args.plugin_dir,
+                    cli_overrides=cli_overrides,
                 )
                 future_map[future] = item
                 if args.job_interval_s > 0:
@@ -612,7 +675,7 @@ def _soak_run(args: argparse.Namespace) -> None:
 
 def _run_benchmark(args: argparse.Namespace) -> None:
     config, template_name = _load_run_config(args)
-    errors = _validate_runtime_config(config)
+    errors = _validate_runtime_config(config, mode=args.config_mode)
     if errors:
         raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
 
@@ -687,10 +750,11 @@ def _validate_config_cmd(args: argparse.Namespace) -> None:
     config, template_name = _load_run_config(args)
     plugin_registry = _load_plugin_registry(config, [])
 
-    errors = _validate_runtime_config(config)
+    errors = _validate_runtime_config(config, mode=args.config_mode)
     payload = {
         "schema_version": 1,
         "template": template_name,
+        "config_mode": args.config_mode,
         "valid": len(errors) == 0,
         "errors": errors,
         "plugin_count": len(plugin_registry.list()),
@@ -820,17 +884,48 @@ def _show_report(args: argparse.Namespace) -> None:
     print(json.dumps(payload, indent=2, ensure_ascii=False))
 
 
+def _create_mlflow_tracker(config: Dict[str, Any]) -> MLflowTracker:
+    logging_cfg = config.get("logging", {})
+    nested_mlflow_cfg = logging_cfg.get("mlflow", {}) if isinstance(logging_cfg.get("mlflow", {}), dict) else {}
+
+    enabled = bool(nested_mlflow_cfg.get("enabled", False))
+    tracking_uri = (
+        nested_mlflow_cfg.get("tracking_uri")
+        or logging_cfg.get("mlflow_tracking_uri")
+        or "mlruns"
+    )
+    experiment_name = str(nested_mlflow_cfg.get("experiment_name", "autoglitch"))
+
+    return MLflowTracker(
+        enabled=enabled,
+        tracking_uri=str(tracking_uri) if tracking_uri else None,
+        experiment_name=experiment_name,
+    )
+
+
 def _create_optimizer(
     optimizer_type: str,
     config: Dict[str, Any],
     param_space: Dict[str, Any],
     bo_backend: str | None,
+    rl_backend: str | None,
 ):
     optimizer_cfg = config.get("optimizer", {})
     seed = int(config.get("experiment", {}).get("seed", 42))
 
     if optimizer_type == "rl":
         rl_cfg = optimizer_cfg.get("rl", {})
+        backend = str(rl_backend or rl_cfg.get("backend", "lite")).lower()
+        if backend == "sb3":
+            return SB3Optimizer(
+                param_space=param_space,
+                seed=seed,
+                algorithm=str(rl_cfg.get("algorithm", "ppo")),
+                learning_rate=float(rl_cfg.get("learning_rate", 3e-4)),
+                total_timesteps=int(rl_cfg.get("total_timesteps", 20_000)),
+                train_interval=int(rl_cfg.get("train_interval", 32)),
+                checkpoint_interval=int(rl_cfg.get("checkpoint_interval", 5_000)),
+            )
         return RLOptimizer(
             param_space=param_space,
             seed=seed,
@@ -855,12 +950,16 @@ def _create_hardware(args: argparse.Namespace, config: Dict[str, Any], seed: int
     mode = args.hardware or hw_cfg.get("mode", "mock")
 
     if mode == "serial":
+        from .hardware import AsyncSerialCommandHardware
+
         target_cfg = hw_cfg.get("target", {})
         port = args.serial_port or target_cfg.get("port")
         if not port:
             raise SystemExit("serial hardware mode requires a port (config.hardware.target.port or --serial-port)")
 
         timeout = float(args.serial_timeout if args.serial_timeout is not None else target_cfg.get("timeout", 1.0))
+        serial_cfg = hw_cfg.get("serial", {}) if isinstance(hw_cfg.get("serial", {}), dict) else {}
+        serial_io = str(getattr(args, "serial_io", None) or serial_cfg.get("io_mode", "sync")).lower()
 
         serial_template = hw_cfg.get(
             "serial_command_template",
@@ -870,14 +969,21 @@ def _create_hardware(args: argparse.Namespace, config: Dict[str, Any], seed: int
             ),
         )
 
-        return SerialCommandHardware(
-            port=str(port),
-            baudrate=int(target_cfg.get("baudrate", 115200)),
-            timeout=timeout,
-            command_template=str(serial_template),
-            reset_command=str(hw_cfg.get("reset_command", "")),
-            trigger_command=str(hw_cfg.get("trigger_command", "")),
-        )
+        adapter_kwargs = {
+            "port": str(port),
+            "baudrate": int(target_cfg.get("baudrate", 115200)),
+            "timeout": timeout,
+            "command_template": str(serial_template),
+            "reset_command": str(hw_cfg.get("reset_command", "")),
+            "trigger_command": str(hw_cfg.get("trigger_command", "")),
+        }
+        if serial_io == "async":
+            return AsyncSerialCommandHardware(**adapter_kwargs)
+
+        if serial_io != "sync":
+            raise SystemExit(f"unsupported serial io mode: {serial_io} (expected sync or async)")
+
+        return SerialCommandHardware(**adapter_kwargs)
 
     return MockHardware(seed=seed)
 
@@ -943,15 +1049,18 @@ def _build_run_namespace(options: Dict[str, Any], cli_plugin_dirs: Iterable[str]
     return argparse.Namespace(
         config=options.get("config", "configs/default.yaml"),
         template=options.get("template"),
+        config_mode=options.get("config_mode", "strict"),
         target=options.get("target", "stm32f3"),
         trials=options.get("trials"),
         optimizer=options.get("optimizer"),
         bo_backend=options.get("bo_backend"),
+        rl_backend=options.get("rl_backend"),
         enable_llm=bool(options.get("enable_llm", False)),
         target_primitive=options.get("target_primitive"),
         hardware=options.get("hardware"),
         serial_port=options.get("serial_port"),
         serial_timeout=options.get("serial_timeout"),
+        serial_io=options.get("serial_io"),
         rerun_count=options.get("rerun_count"),
         fixed_seed=options.get("fixed_seed"),
         success_threshold=options.get("success_threshold"),
@@ -1007,6 +1116,7 @@ def _execute_queue_job(
     item: Dict[str, Any],
     defaults: Dict[str, Any],
     cli_plugin_dirs: Iterable[str],
+    cli_overrides: Dict[str, Any] | None = None,
 ) -> tuple[str, Dict[str, Any]]:
     idx = int(item["index"])
     priority = int(item["priority"])
@@ -1015,6 +1125,9 @@ def _execute_queue_job(
     job_key = _queue_job_key(idx, job_name)
 
     merged = _deep_merge(defaults, job)
+    for key, value in (cli_overrides or {}).items():
+        if value is not None:
+            merged[key] = value
     run_args = _build_run_namespace(merged, cli_plugin_dirs)
 
     record: Dict[str, Any] = {
@@ -1114,15 +1227,18 @@ def _execute_soak_batch(
     run_args = argparse.Namespace(
         config=args.config,
         template=args.template,
+        config_mode=getattr(args, "config_mode", "strict"),
         target=args.target,
         trials=int(args.batch_trials),
         optimizer=args.optimizer,
         bo_backend=args.bo_backend,
+        rl_backend=getattr(args, "rl_backend", None),
         enable_llm=args.enable_llm,
         target_primitive=args.target_primitive,
         hardware=args.hardware,
         serial_port=args.serial_port,
         serial_timeout=args.serial_timeout,
+        serial_io=getattr(args, "serial_io", None),
         rerun_count=1,
         fixed_seed=int(base_seed + batch_index),
         success_threshold=args.success_threshold,
@@ -1174,15 +1290,18 @@ def _build_soak_resume_key(args: argparse.Namespace) -> str:
     key_payload = {
         "config": args.config,
         "template": args.template,
+        "config_mode": getattr(args, "config_mode", "strict"),
         "target": args.target,
         "batch_trials": int(args.batch_trials),
         "optimizer": args.optimizer,
         "bo_backend": args.bo_backend,
+        "rl_backend": getattr(args, "rl_backend", None),
         "enable_llm": bool(args.enable_llm),
         "target_primitive": args.target_primitive,
         "hardware": args.hardware,
         "serial_port": args.serial_port,
         "serial_timeout": args.serial_timeout,
+        "serial_io": getattr(args, "serial_io", None),
         "fixed_seed": args.fixed_seed,
         "success_threshold": args.success_threshold,
         "plugin_dir": list(args.plugin_dir),
@@ -1300,8 +1419,8 @@ def _load_plugin_registry(config: Dict[str, Any], cli_plugin_dirs: Iterable[str]
     return PluginRegistry.load_default(extra_dirs=all_dirs)
 
 
-def _validate_runtime_config(config: Dict[str, Any]) -> List[str]:
-    errors = validate_config(config)
+def _validate_runtime_config(config: Dict[str, Any], mode: str = "strict") -> List[str]:
+    errors = validate_config(config, mode=mode)
     safety = SafetyController.from_config(config)
     errors.extend(safety.validate_config(config))
 

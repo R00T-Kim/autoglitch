@@ -31,19 +31,24 @@ class ExperimentLogger:
         self,
         campaign: CampaignResult,
         output_dir: str = "experiments/results",
+        mlflow_info: Dict[str, Any] | None = None,
     ) -> Path:
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         summary_path = target_dir / f"{campaign.campaign_id}_{self.run_id}.json"
         payload: Dict[str, Any] = {
-            "schema_version": 2,
+            "schema_version": 3,
             "campaign_id": campaign.campaign_id,
             "run_id": self.run_id,
             "n_trials": campaign.n_trials,
             "success_rate": campaign.success_rate,
             "primitive_repro_rate": campaign.primitive_repro_rate,
             "time_to_first_primitive": campaign.time_to_first_primitive,
+            "runtime": {
+                "total_seconds": campaign.runtime_total_seconds,
+            },
+            "error_breakdown": campaign.error_breakdown,
             "fault_distribution": {
                 fault.name: count for fault, count in campaign.fault_distribution.items()
             },
@@ -52,6 +57,7 @@ class ExperimentLogger:
                 for primitive, count in campaign.primitive_distribution.items()
             },
             "config": campaign.config,
+            "mlflow": mlflow_info or {"enabled": False},
         }
 
         with summary_path.open("w", encoding="utf-8") as handle:

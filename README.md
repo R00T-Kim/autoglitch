@@ -2,6 +2,8 @@
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#설치)
 [![CI](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml)
+[![Semgrep](https://github.com/R00T-Kim/autoglitch/actions/workflows/semgrep.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/semgrep.yml)
 [![Mode](https://img.shields.io/badge/Hardware-mock%20%7C%20serial-orange)](#운영-예시)
 
 AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워크입니다.  
@@ -83,6 +85,8 @@ python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
 ## 품질 확인
 ```bash
 python -m compileall src tests
+ruff check src tests
+python -m mypy src
 pytest -q
 ```
 
