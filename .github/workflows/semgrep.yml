@@ -1,8 +1,6 @@
 name: Semgrep
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
   schedule:
@@ -43,6 +41,5 @@ jobs:
 
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@v4
-        continue-on-error: true
         with:
           sarif_file: semgrep.sarif
