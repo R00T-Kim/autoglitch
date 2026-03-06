@@ -10,6 +10,7 @@
 - `offset_min/max`
 - `voltage_abs_max`
 - `repeat_min/max`
+- `ext_offset_min/max`
 - `min_cooldown_s`
 - `max_trials_per_minute`
 - `auto_throttle`
@@ -44,6 +45,7 @@ python -m src.cli validate-config --target stm32f3
 
 ## 운영 권장
 - HIL에서는 `hardware: serial` + `safety` 보수적 설정
+- strict config는 `config_version: 2`를 기준으로 `ext_offset`/`recovery`를 함께 검증
 - soak/queue 실행 전 반드시 `validate-config` 통과
 - `manifest_<run_id>.json`에 config hash/plugin snapshot을 보관해 재현성 확보
 

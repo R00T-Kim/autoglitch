@@ -10,6 +10,9 @@ python -m src.cli validate-config --target stm32f3 --config-mode strict
 python -m src.cli validate-config --target stm32f3 --config-mode legacy
 ```
 
+- strict mode는 `config_version: 2` 기준이다.
+- legacy mode는 구설정 migration 확인용이며, malformed 입력도 에러 리스트로 돌려주는 것을 목표로 한다.
+
 ## 1.5) 소프트웨어 전용 serial 에뮬레이션 (장비 없이)
 터미널 A:
 ```bash
@@ -223,6 +226,7 @@ python -m src.cli replay \
 - Queue summary: `experiments/results/queue_*.json`
 - Soak summary: `experiments/results/soak_*.json`
 - HIL preflight summary: `experiments/results/hil_preflight_*.json`
+- Agentic trace: `experiments/results/agentic_trace_*.jsonl`
 
 ### Campaign summary(v6) 핵심 필드
 - `runtime.total_seconds`, `runtime.throughput_trials_per_second`

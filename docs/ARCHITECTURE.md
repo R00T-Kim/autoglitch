@@ -5,13 +5,15 @@
 ## 최근 소프트웨어 업데이트 (2026-03-06)
 
 - **Strict Config 계층**: `pydantic` 기반 strict schema 검증 (`--config-mode strict|legacy`)
+- **Config v2 기준선**: strict mode는 `config_version: 2`를 요구하고 `recovery`/`ext_offset`를 포함
 - **Serial I/O 모드 분리**: `sync`(기본) + `async` 옵션 (`--serial-io async`) + persistent/reconnect 상태머신
+- **Async serial sync-wrapper 안정화**: 이미 실행 중인 event loop 안에서도 동작
 - **HIL 사전검증 게이트**: `hil-preflight` + `--require-preflight`로 serial 안정성 확인 후 캠페인 실행
 - **RL 학습/평가 경로**: `train-rl` / `eval-rl` + SB3 facade checkpoint/load/eval
 - **BO backend 확장**: `auto|heuristic|botorch|turbo|qnehvi` + objective mode(`single|multi`)
-- **Agentic 제어 계층**: Planner Proposal → Policy Gate → Patch Apply 루프 (`run-agentic`)
+- **Agentic 제어 계층**: Planner Proposal → Typed Policy Gate → Patch Apply 루프 (`run-agentic`)
 - **지식 계층 베이스라인**: `kb-ingest`/`kb-query` 로컬 지식 저장소
-- **추적 고도화**: campaign summary `schema_version: 6`, decision trace 포함
+- **추적 고도화**: campaign summary `schema_version: 6`, JSONL decision trace + apply metadata 포함
 - **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
 
 ---
@@ -1051,5 +1053,5 @@ logging_viz  ──▶ (독립, mlflow/plotly/matplotlib 사용)
 ---
 
 > **문서 버전:** v0.1.0
-> **최종 수정:** 2026-03-05
+> **최종 수정:** 2026-03-06
 > **프로젝트:** AUTOGLITCH - CYAI Lab

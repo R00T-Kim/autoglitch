@@ -26,17 +26,25 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - 비동기 serial 세션 재사용 + 재연결(`keep_open`, `reconnect_attempts`)
 - 리포트 스키마 v6: v5 + agentic decision trace/policy metrics
 
-## 최근 업데이트 (2026-03-06, Phase 3)
+## 최근 업데이트 (2026-03-06, Phase 4)
 - Async serial persistent/reconnect 상태머신 도입
+- 이미 실행 중인 event loop 안에서도 동작하는 async serial sync-wrapper 적용
 - BO heuristic 벡터화 평가 + 런타임 telemetry 추가
 - BO backend 확장(`turbo`, `qnehvi`) + objective mode(`single|multi`)
 - RL `train-rl`/`eval-rl` 명령 및 checkpoint/eval 경로 추가
 - Agentic Planner/Policy 루프(`off|advisor|agentic_shadow|agentic_enforced`) 추가
+- Agentic typed policy 검증 + live/next_run patch metadata + JSONL decision trace 추가
 - `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query` 추가
 - 캠페인 요약 `schema_version: 6` 업그레이드
 - `hil-preflight` 커맨드 + `--require-preflight` 게이트 도입
-- CI lint/typecheck를 fail-fast 게이트로 강화
+- strict config `config_version: 2` + `recovery`/`ext_offset` schema/safety 검증 추가
+- run/queue/soak cleanup 및 serial 병렬 차단 로직 강화
+- CI는 broad smoke + upgraded subsystem incremental gates로 정렬
 - 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
+
+현재 소프트웨어 검증 상태(2026-03-06):
+- `pytest -q` → `93 passed, 2 skipped`
+- strict/legacy config regression, agentic trace, async serial running-loop regression 포함
 
 ## 프로젝트 구조
 - `src/`: 오케스트레이터, optimizer, hardware, runtime, safety, CLI
@@ -118,6 +126,11 @@ python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
 
 > `serial` 타깃 병렬 실행은 기본 차단됩니다. 필요한 경우에만 `--allow-parallel-serial`을 명시하세요.
 
+### 설정 버전/호환성
+- strict 모드는 **`config_version: 2`** 를 요구합니다.
+- legacy 모드는 구설정 마이그레이션 확인용이며, malformed 입력도 **에러 리스트 반환**을 목표로 합니다.
+- `ext_offset`, `recovery.*`, agentic policy metadata는 v2 기준입니다.
+
 ### 성능 튜닝 옵션 (config)
 ```yaml
 ai:
@@ -178,7 +191,55 @@ hardware:
 ```bash
 python -m compileall src tests
 ruff check src tests --select E,F --ignore E501
-python -m mypy src/config src/runtime/preflight.py src/types.py
+ruff check --select E,F,I,SIM --ignore E501 \
+  src/agentic \
+  src/cli_agentic.py \
+  src/cli_batch.py \
+  src/cli_commands.py \
+  src/cli_execution.py \
+  src/cli_parser.py \
+  src/cli_preflight.py \
+  src/cli_runtime.py \
+  src/cli_support.py \
+  src/config/schema.py \
+  src/config/validator.py \
+  src/safety/controller.py \
+  src/hardware/serial_async_hardware.py \
+  src/hardware/serial_hardware.py \
+  src/plugins/registry.py \
+  src/types.py \
+  tests/unit/test_agentic_policy.py \
+  tests/unit/test_agentic_trace.py \
+  tests/unit/test_cli_agentic.py \
+  tests/unit/test_cli_advanced_modes.py \
+  tests/unit/test_cli_helpers.py \
+  tests/unit/test_cli_preflight.py \
+  tests/unit/test_cli_rl_commands.py \
+  tests/unit/test_rl_backends.py \
+  tests/unit/test_config_schema.py \
+  tests/unit/test_plugin_registry.py \
+  tests/unit/test_safety_controller.py \
+  tests/unit/test_serial_async_hardware.py
+python -m mypy --follow-imports=silent \
+  src/cli_agentic.py \
+  src/cli_batch.py \
+  src/cli_commands.py \
+  src/cli_execution.py \
+  src/cli_parser.py \
+  src/cli_preflight.py \
+  src/cli_runtime.py \
+  src/cli_support.py \
+  src/agentic/patcher.py \
+  src/agentic/planner.py \
+  src/agentic/policy.py \
+  src/agentic/trace.py \
+  src/config/schema.py \
+  src/config/validator.py \
+  src/safety/controller.py \
+  src/hardware/serial_async_hardware.py \
+  src/hardware/serial_hardware.py \
+  src/plugins/registry.py \
+  src/types.py
 pytest -q
 ```
 

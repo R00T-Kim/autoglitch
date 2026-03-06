@@ -1,4 +1,4 @@
-# Plan Implementation Status (2026-03-05)
+# Plan Implementation Status (2026-03-06)
 
 ## ✅ Implemented in this cycle (Phase 1)
 
@@ -30,7 +30,7 @@
   - async serial persistence + reconnect
   - vectorized BO telemetry
   - schema v4 latency/Pareto summary
-- Current test status: `54 passed`.
+- Current test status (2026-03-06): `93 passed, 2 skipped`.
 
 ## 🔜 Next phase candidates
 - SB3 true online/offline training path (callbacks/checkpoint/eval integration)
@@ -78,3 +78,46 @@
   - agentic policy validation
   - agentic CLI flow
   - knowledge ingest/query roundtrip
+
+## ✅ Additional implementation (Phase 4, 2026-03-06)
+- Config/runtime hardening:
+  - strict mode now requires `config_version: 2`
+  - `recovery.*` added to strict schema
+  - `ext_offset` added to glitch/safety schema and runtime checks
+  - legacy validator now returns friendly errors for malformed versions, bad numeric casts, and non-mapping sections
+- Safety/runtime operations:
+  - `SafetyController` clamps/validates `ext_offset`
+  - run path guarantees hardware disconnect + MLflow cleanup in `finally`
+  - queue/soak serial parallel blocking now resolves effective merged config/template mode
+- Agentic control hardening:
+  - typed policy validation rejects bad values before patch apply
+  - per-path metadata added: `validation_stage`, `effect_type_by_path`, `validation_status_by_path`
+  - patch apply now distinguishes `live_applied` vs `deferred_applied`
+  - decision trace is persisted as JSONL
+- Async serial sync-wrapper hardening:
+  - background runner thread avoids `Cannot run the event loop while another loop is running`
+  - regression test added for `asyncio.run(...)` caller environments
+- Plugin manifest safety:
+  - duplicate plugin names now fail fast during registry load
+- Incremental quality gates aligned with upgraded subsystems:
+  - targeted Ruff and mypy checks now cover agentic/config/safety/serial/plugin paths
+
+## ✅ Additional implementation (Phase 5, 2026-03-06)
+- CLI monolith reduction:
+  - extracted shared CLI support helpers to `src/cli_support.py`
+  - extracted agentic campaign loop helpers to `src/cli_agentic.py`
+  - extracted parser builders to `src/cli_parser.py`
+  - extracted runtime factories to `src/cli_runtime.py`
+  - extracted leaf command handlers to `src/cli_commands.py`
+  - extracted core campaign execution to `src/cli_execution.py`
+  - extracted queue/soak batch flows to `src/cli_batch.py`
+  - extracted HIL preflight helpers to `src/cli_preflight.py`
+  - preserved `src.cli` compatibility so existing tests/imports continue to work via facade wrappers/re-exports
+- Structural impact:
+  - `src/cli.py` reduced from ~2514 lines to ~917 lines across the refactor passes
+  - command dispatch, core campaign execution, queue/soak orchestration, and HIL preflight remain in `src.cli`
+  - parser, runtime factories, RL/KB/report/validation command handlers, config merge, queue/soak helpers, replay/report helpers, runtime fingerprinting, and agentic campaign orchestration moved out
+- Validation:
+  - CLI-focused regression suite passed after each extraction stage
+  - targeted Ruff and targeted mypy for all extracted CLI modules passed
+  - full `pytest -q` remained green (`93 passed, 2 skipped`)
