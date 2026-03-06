@@ -4,56 +4,27 @@
 [![CI](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml)
 [![Semgrep](https://github.com/R00T-Kim/autoglitch/actions/workflows/semgrep.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/semgrep.yml)
-[![Mode](https://img.shields.io/badge/Hardware-mock%20%7C%20serial-orange)](#운영-예시)
+[![Mode](https://img.shields.io/badge/Hardware-mock%20%7C%20serial-orange)](#실장비-hil-실행)
 
 AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워크입니다.  
 파라미터 탐색(BO/RL), 실험 실행, 관측/분류, primitive 매핑, 재현성 리포트를 한 흐름으로 제공합니다.
 
-## 핵심 기능
-- `run`: 단일 캠페인 실행
-- `soak`: 장시간 배치 실행 + 체크포인트/재개
-- `queue-run`: 다중 job 실행 (`priority`, `enabled`, 체크포인트/재개)
-- `benchmark`: 알고리즘 비교 (bayesian vs rl)
-- `train-rl`: RL 백엔드 학습/체크포인트 생성
-- `eval-rl`: RL 체크포인트 평가
-- `run-agentic`: planner/policy를 포함한 agentic 실행 루프
-- `planner-step`: 단일 planner 제안 + policy 검증
-- `eval-suite`: 재현성 스위트 실행
-- `kb-ingest`, `kb-query`: 로컬 지식 저장소 적재/조회
-- `replay`: JSONL trial 로그 재집계/검증
-- `hil-preflight`: serial HIL 사전 안정성 점검(timeout/reset/p95 latency)
-- 안전/복구: safety guard + retry/circuit-breaker
-- 비동기 serial 세션 재사용 + 재연결(`keep_open`, `reconnect_attempts`)
-- 리포트 스키마 v6: v5 + agentic decision trace/policy metrics
+## 이 프로젝트로 할 수 있는 것
+- glitch campaign 실행 및 결과 리포트 생성
+- mock/serial 하드웨어 경로 모두 검증
+- RL 기반 학습/평가 및 체크포인트 관리
+- planner/policy 기반 agentic 제어 루프 실행
+- soak/queue 기반 장시간 배치 운영
+- HIL preflight로 serial 타깃 안정성 사전 점검
+- JSONL trial log / decision trace / campaign summary 기반 재현성 분석
 
-## 최근 업데이트 (2026-03-06)
-- Async serial persistent/reconnect 상태머신 도입
-- 이미 실행 중인 event loop 안에서도 동작하는 async serial sync-wrapper 적용
-- BO heuristic 벡터화 평가 + 런타임 telemetry 추가
-- BO backend 확장(`turbo`, `qnehvi`) + objective mode(`single|multi`)
-- RL `train-rl`/`eval-rl` 명령 및 checkpoint/eval 경로 추가
-- Agentic Planner/Policy 루프(`off|advisor|agentic_shadow|agentic_enforced`) 추가
-- Agentic typed policy 검증 + live/next_run patch metadata + JSONL decision trace 추가
-- `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query` 추가
-- 캠페인 요약 `schema_version: 6` 업그레이드
-- `hil-preflight` 커맨드 + `--require-preflight` 게이트 도입
-- strict config `config_version: 2` + `recovery`/`ext_offset` schema/safety 검증 추가
-- run/queue/soak cleanup 및 serial 병렬 차단 로직 강화
-- CI는 broad smoke + upgraded subsystem incremental gates로 정렬
-- CLI는 facade/dispatch + parser/runtime/execution/batch/preflight/helper 계층으로 분리됨
-- 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
-
-현재 소프트웨어 검증 상태(2026-03-06):
-- `pytest -q` → `93 passed, 2 skipped`
-- strict/legacy config regression, agentic trace, async serial running-loop regression 포함
-
-## 프로젝트 구조
-- `src/`: 오케스트레이터, optimizer, hardware, runtime, safety, CLI
-- `configs/`: 기본/타깃 설정
-- `experiments/configs/`: repro/soak/queue 템플릿
-- `experiments/logs`, `experiments/results`: 실행 산출물
-- `tests/`: unit/integration 테스트
-- `docs/`: 운영/설계 문서
+## 처음 시작하는 순서
+1. **설치**
+2. **설정 검증** (`validate-config`)
+3. **mock 캠페인 1회 실행**
+4. **report 확인**
+5. 필요하면 **mock serial bridge** 로 serial 경로 검증
+6. 실장비에서는 **`hil-preflight` 후 run/soak/queue** 순서로 진행
 
 ## 설치
 ```bash
@@ -69,70 +40,71 @@ python -m src.cli run --target stm32f3 --trials 100
 python -m src.cli report
 ```
 
-## 장비 없이 serial 경로 테스트
+현재 소프트웨어 검증 상태(2026-03-06):
+- `pytest -q` → `93 passed, 2 skipped`
+- strict/legacy config regression, agentic trace, async serial running-loop regression 포함
+
+## mock serial 경로 검증
+장비 없이 serial 코드 경로를 먼저 검증하려면 mock bridge를 사용합니다.
+
 ```bash
 python -m src.tools.mock_glitch_bridge --port-file /tmp/autoglitch_mock_bridge.port
 python -m src.cli run --hardware serial --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)" --trials 20
 ```
 
-## 라즈베리파이 GPIO 브리지
+## 실장비 HIL 실행
+실장비에서는 preflight를 먼저 돌린 뒤 캠페인을 실행하는 흐름을 권장합니다.
+
 ```bash
-python -m src.tools.rpi_glitch_bridge \
-  --control-port /dev/ttyUSB0 \
-  --glitch-pin 18 --reset-pin 23 --trigger-out-pin 24 --active-high
-```
-
-## 아키텍처 다이어그램
-```mermaid
-flowchart LR
-  A[Optimizer BO/RL] --> B[Orchestrator]
-  B --> C[Safety Controller]
-  C --> D[Recovery Executor]
-  D --> E[Hardware Mock/Serial]
-  E --> F[Observer]
-  F --> G[Classifier]
-  G --> H[Primitive Mapper]
-  H --> I[Experiment Logger]
-  H --> A
-  B --> J[LLM Advisor Optional]
-```
-
-상세 설명: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-
-## 운영 예시
-```bash
-# HIL preflight + 강제 실행
 python -m src.cli hil-preflight --target stm32f3 --hardware serial --serial-port /dev/ttyUSB0
 python -m src.cli run --template experiments/configs/soak_hil_stm32f3.yaml --hardware serial --serial-port /dev/ttyUSB0 --require-preflight
-
-# RL train / eval
-python -m src.cli train-rl --target stm32f3 --rl-backend sb3 --steps 5000 --run-tag rl_baseline
-python -m src.cli eval-rl --target stm32f3 --rl-backend sb3 --checkpoint experiments/results/rl_sb3_checkpoint_step_5000_train_final.json
-
-# Agentic shadow/enforced
-python -m src.cli run-agentic --template experiments/configs/repro_stm32f3.yaml --ai-mode agentic_shadow
-python -m src.cli run-agentic --template experiments/configs/repro_stm32f3.yaml --ai-mode agentic_enforced --policy-file configs/policy/default_policy.yaml
-
-# Planner 단일 검증
-python -m src.cli planner-step --target stm32f3 --ai-mode agentic_enforced --success-rate 0.05 --primitive-rate 0.01
-
-# soak + resume
-python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20
-python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20 --resume
-
-# queue + priority/checkpoint
-python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --continue-on-error
-python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
 ```
 
 > `serial` 타깃 병렬 실행은 기본 차단됩니다. 필요한 경우에만 `--allow-parallel-serial`을 명시하세요.
 
-### 설정 버전/호환성
+## 운영 명령 한눈에 보기
+- `run`: 단일 캠페인 실행
+- `report`: 최근 캠페인 리포트 출력
+- `replay`: JSONL trial 로그 재집계/검증
+- `hil-preflight`: serial HIL 사전 안정성 점검
+- `soak`: 장시간 배치 실행 + 체크포인트/재개
+- `queue-run`: 다중 job 실행 (`priority`, `enabled`, 체크포인트/재개)
+- `benchmark`: 알고리즘 비교 (bayesian vs rl)
+- `train-rl`, `eval-rl`: RL 백엔드 학습/평가
+- `run-agentic`, `planner-step`: agentic planner/policy 루프 실행/검증
+- `eval-suite`: 재현성 스위트 실행
+- `kb-ingest`, `kb-query`: 로컬 지식 저장소 적재/조회
+
+## 고급 워크플로우
+
+### RL train / eval
+```bash
+python -m src.cli train-rl --target stm32f3 --rl-backend sb3 --steps 5000 --run-tag rl_baseline
+python -m src.cli eval-rl --target stm32f3 --rl-backend sb3 --checkpoint experiments/results/rl_sb3_checkpoint_step_5000_train_final.json
+```
+
+### Agentic shadow / enforced
+```bash
+python -m src.cli run-agentic --template experiments/configs/repro_stm32f3.yaml --ai-mode agentic_shadow
+python -m src.cli run-agentic --template experiments/configs/repro_stm32f3.yaml --ai-mode agentic_enforced --policy-file configs/policy/default_policy.yaml
+python -m src.cli planner-step --target stm32f3 --ai-mode agentic_enforced --success-rate 0.05 --primitive-rate 0.01
+```
+
+### soak / queue 운영
+```bash
+python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20
+python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20 --resume
+
+python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --continue-on-error
+python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
+```
+
+## 설정 버전 / 호환성
 - strict 모드는 **`config_version: 2`** 를 요구합니다.
-- legacy 모드는 구설정 마이그레이션 확인용이며, malformed 입력도 **에러 리스트 반환**을 목표로 합니다.
+- legacy 모드는 구설정 마이그레이션 확인용이며 malformed 입력도 **에러 리스트 반환**을 목표로 합니다.
 - `ext_offset`, `recovery.*`, agentic policy metadata는 v2 기준입니다.
 
-### 성능 튜닝 옵션 (config)
+### 성능 튜닝 예시 (config)
 ```yaml
 ai:
   mode: agentic_shadow
@@ -177,7 +149,7 @@ hardware:
       max_p95_latency_s: 0.50
 ```
 
-### 리포트 확인 포인트 (v6)
+## 리포트에서 먼저 볼 것
 - `runtime.throughput_trials_per_second`
 - `latency.mean_seconds / p95_seconds / max_seconds`
 - `pareto_front`
@@ -187,6 +159,55 @@ hardware:
 - `decision_trace`
 - `training.optimizer_backend / observed_steps`
 - `optimizer_runtime`
+
+## 최근 업데이트 (2026-03-06)
+- Async serial persistent/reconnect 상태머신 도입
+- 이미 실행 중인 event loop 안에서도 동작하는 async serial sync-wrapper 적용
+- BO heuristic 벡터화 평가 + 런타임 telemetry 추가
+- BO backend 확장(`turbo`, `qnehvi`) + objective mode(`single|multi`)
+- RL `train-rl`/`eval-rl` 명령 및 checkpoint/eval 경로 추가
+- Agentic Planner/Policy 루프(`off|advisor|agentic_shadow|agentic_enforced`) 추가
+- Agentic typed policy 검증 + live/next_run patch metadata + JSONL decision trace 추가
+- `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query` 추가
+- 캠페인 요약 `schema_version: 6` 업그레이드
+- `hil-preflight` 커맨드 + `--require-preflight` 게이트 도입
+- strict config `config_version: 2` + `recovery`/`ext_offset` schema/safety 검증 추가
+- run/queue/soak cleanup 및 serial 병렬 차단 로직 강화
+- CI는 broad smoke + upgraded subsystem incremental gates로 정렬
+- CLI는 facade/dispatch + parser/runtime/execution/batch/preflight/helper 계층으로 분리됨
+- 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
+
+## 프로젝트 구조
+- `src/`: orchestrator, optimizer, hardware, runtime, safety, CLI
+- `configs/`: 기본/타깃 설정
+- `experiments/configs/`: repro/soak/queue 템플릿
+- `experiments/logs`, `experiments/results`: 실행 산출물
+- `tests/`: unit/integration 테스트
+- `docs/`: 운영/설계 문서
+
+## 아키텍처 개요
+```mermaid
+flowchart LR
+  A[Optimizer BO/RL] --> B[Orchestrator]
+  B --> C[Safety Controller]
+  C --> D[Recovery Executor]
+  D --> E[Hardware Mock/Serial]
+  E --> F[Observer]
+  F --> G[Classifier]
+  G --> H[Primitive Mapper]
+  H --> I[Experiment Logger]
+  H --> A
+  B --> J[LLM Advisor Optional]
+```
+
+상세 설명: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+
+## 라즈베리파이 GPIO 브리지
+```bash
+python -m src.tools.rpi_glitch_bridge \
+  --control-port /dev/ttyUSB0 \
+  --glitch-pin 18 --reset-pin 23 --trigger-out-pin 24 --active-high
+```
 
 ## 품질 확인
 ```bash
