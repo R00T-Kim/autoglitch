@@ -4,7 +4,7 @@
 
 ## 적용 현황 스냅샷 (2026-03-06)
 - ✅ Pydantic strict config 계층 적용
-- ✅ strict mode `config_version: 2` 고정 + `recovery`/`ext_offset` schema 확장
+- ✅ strict mode `config_version: 3` 고정 + `recovery`/`ext_offset` + hardware binding/discovery schema 확장
 - ✅ Serial async bridge + persistent/reconnect 적용
 - ✅ running event loop 환경에서도 안전한 async serial sync-wrapper 적용
 - ✅ Serial HIL preflight + 실행 전 강제 게이트(`--require-preflight`)
@@ -17,6 +17,8 @@
 - ✅ queue/soak serial 병렬 차단 effective-config 기준 강화
 - ✅ run cleanup(하드웨어 disconnect / MLflow end-run) hardening 적용
 - ✅ CodeQL/Semgrep 워크플로우 + incremental CI gate hardening 적용
+- ✅ 하드웨어 프레임워크 v1(registry/profile/local binding + detect/setup/doctor) 적용
+- ✅ typed serial protocol `autoglitch.v1` + legacy serial fallback 적용
 - ⏳ botorch-native TuRBO/qNEHVI 정교화는 다음 단계
 
 ## 1) 지금 바로 적용 가능한 Quick Wins
@@ -30,7 +32,7 @@
 
 ### B. 테스트 실행시간 단축
 - `pytest-xdist`(`pytest -n auto`) 도입으로 unit test wall-time 단축 가능.
-- 현재 테스트 수(2026-03-06 기준 `93 passed, 2 skipped`) 기준으로 CI 체감 개선이 큼.
+- 현재 테스트 수(2026-03-06 기준 `105 passed, 3 skipped`) 기준으로 CI 체감 개선이 큼.
 
 ### C. 설정 검증 강도 상향
 - 현재 validator + safety 체크는 있음.

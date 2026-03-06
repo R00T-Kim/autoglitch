@@ -30,7 +30,7 @@
   - async serial persistence + reconnect
   - vectorized BO telemetry
   - schema v4 latency/Pareto summary
-- Current test status (2026-03-06): `93 passed, 2 skipped`.
+- Current test status (2026-03-06): `105 passed, 3 skipped`.
 
 ## 🔜 Next phase candidates
 - SB3 true online/offline training path (callbacks/checkpoint/eval integration)
@@ -81,7 +81,7 @@
 
 ## ✅ Additional implementation (Phase 4, 2026-03-06)
 - Config/runtime hardening:
-  - strict mode now requires `config_version: 2`
+  - strict mode now requires `config_version: 3`
   - `recovery.*` added to strict schema
   - `ext_offset` added to glitch/safety schema and runtime checks
   - legacy validator now returns friendly errors for malformed versions, bad numeric casts, and non-mapping sections
@@ -120,4 +120,27 @@
 - Validation:
   - CLI-focused regression suite passed after each extraction stage
   - targeted Ruff and targeted mypy for all extracted CLI modules passed
-  - full `pytest -q` remained green (`93 passed, 2 skipped`)
+  - full `pytest -q` remained green (`105 passed, 3 skipped`)
+
+
+## ✅ Additional implementation (Phase 6, 2026-03-06)
+- Hardware framework v1 added:
+  - `src/hardware/framework.py` registry/profile/binding resolution
+  - official profiles under `configs/hardware_profiles/*.yaml`
+  - local binding store default: `configs/local/hardware.yaml`
+- New hardware adapters/paths:
+  - `serial-json-hardware` typed JSONL adapter (`autoglitch.v1`)
+  - legacy `serial-command-hardware` retained as fallback
+- New CLI commands:
+  - `detect-hardware`
+  - `setup-hardware`
+  - `doctor-hardware`
+- Runtime integration:
+  - hardware creation now resolves explicit adapter -> local binding -> auto-detect -> legacy fallback/mock fallback
+  - HIL preflight now uses resolved transport rather than only raw `hardware.mode`
+- Bridge support:
+  - mock bridge now speaks both legacy text and typed JSONL
+  - Raspberry Pi bridge now speaks both legacy text and typed JSONL
+- Validation:
+  - added tests for typed serial adapter, hardware framework resolution, CLI onboarding commands, bridge typed protocol handling
+  - current test status: `105 passed, 3 skipped`

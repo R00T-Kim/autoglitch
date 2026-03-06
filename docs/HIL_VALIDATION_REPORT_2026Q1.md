@@ -1,16 +1,18 @@
 # HIL Validation Report 2026 Q1
 
 > 상태(2026-03-06): **실측 데이터 대기 중**. 아래 템플릿은 유지하되, 현재 확보된 근거는 software-only validation뿐이다.
-> software gate(2026-03-06): `pytest -q` → `93 passed, 2 skipped`
+> software gate(2026-03-06): `pytest -q` → `105 passed, 3 skipped`
 
 ## 1) 목적
 STM32F3/ESP32 타깃에서 AUTOGLITCH의 serial HIL 실행 안정성과 재현성 KPI를 검증한다.
 
 ## 2) Protocol
 0. Software gate:
-   - strict config v2 validation 통과
+   - strict config v3 validation 통과
    - async serial running-event-loop regression 통과
    - queue/soak serial parallel guard regression 통과
+- hardware onboarding flow (`detect-hardware` / `setup-hardware` / `doctor-hardware`) regression 통과
+- typed serial protocol `autoglitch.v1` bridge regression 통과
 1. `hil-preflight` 통과 (`--require-preflight` 조건)
 2. Warmup: 100 trials
 3. Stability: 3회 × 300 trials (고정 seed 세트)
