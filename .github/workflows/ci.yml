@@ -38,6 +38,38 @@ jobs:
       - name: Ruff lint
         run: ruff check src tests --select E,F --ignore E501
 
+      - name: Ruff upgraded subsystems
+        run: |
+          ruff check --select E,F,I,SIM --ignore E501 \
+            src/agentic \
+            src/cli_agentic.py \
+            src/cli_batch.py \
+            src/cli_commands.py \
+            src/cli_execution.py \
+            src/cli_parser.py \
+            src/cli_preflight.py \
+            src/cli_runtime.py \
+            src/cli_support.py \
+            src/config/schema.py \
+            src/config/validator.py \
+            src/safety/controller.py \
+            src/hardware/serial_async_hardware.py \
+            src/hardware/serial_hardware.py \
+            src/plugins/registry.py \
+            src/types.py \
+            tests/unit/test_agentic_policy.py \
+            tests/unit/test_agentic_trace.py \
+            tests/unit/test_cli_agentic.py \
+            tests/unit/test_cli_advanced_modes.py \
+            tests/unit/test_cli_helpers.py \
+            tests/unit/test_cli_preflight.py \
+            tests/unit/test_cli_rl_commands.py \
+            tests/unit/test_rl_backends.py \
+            tests/unit/test_config_schema.py \
+            tests/unit/test_plugin_registry.py \
+            tests/unit/test_safety_controller.py \
+            tests/unit/test_serial_async_hardware.py
+
   typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -58,8 +90,28 @@ jobs:
           python -m pip install -e . --no-deps --no-build-isolation
           python -m pip install mypy
 
-      - name: Mypy
-        run: python -m mypy src/config src/runtime/preflight.py src/types.py
+      - name: Mypy upgraded subsystems
+        run: |
+          python -m mypy --follow-imports=silent \
+            src/cli_agentic.py \
+            src/cli_batch.py \
+            src/cli_commands.py \
+            src/cli_execution.py \
+            src/cli_parser.py \
+            src/cli_preflight.py \
+            src/cli_runtime.py \
+            src/cli_support.py \
+            src/agentic/patcher.py \
+            src/agentic/planner.py \
+            src/agentic/policy.py \
+            src/agentic/trace.py \
+            src/config/schema.py \
+            src/config/validator.py \
+            src/safety/controller.py \
+            src/hardware/serial_async_hardware.py \
+            src/hardware/serial_hardware.py \
+            src/plugins/registry.py \
+            src/types.py
 
   test:
     runs-on: ubuntu-latest
