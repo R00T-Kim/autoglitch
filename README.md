@@ -92,6 +92,8 @@ python -m src.cli run --target stm32f3 --trials 20
 6. `run` / `soak` / `queue-run`
 7. RC 최종 검증은 `validate-hil-rc`
 
+> 실장비 처음 투입할 때는 [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md) 를 같이 보세요.
+
 ## 자주 쓰는 명령
 - `run`: 단일 캠페인 실행
 - `report`: 최근 캠페인 리포트 출력
@@ -183,3 +185,4 @@ pytest -q
 - [`docs/PLUGIN_SDK.md`](docs/PLUGIN_SDK.md)
 - [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
 - [`docs/HIL_VALIDATION_REPORT_2026Q1.md`](docs/HIL_VALIDATION_REPORT_2026Q1.md)
+- [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md)

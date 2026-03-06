@@ -13,6 +13,8 @@ python -m src.cli validate-config --target stm32f3 --config-mode legacy
 - 공식 하드웨어 프로파일은 `configs/hardware_profiles/*.yaml` 에 있다.
 
 ## 2) 하드웨어 온보딩 (권장 시작점)
+실장비 첫 투입 전에는 [`docs/REAL_HARDWARE_CHECKLIST.md`](REAL_HARDWARE_CHECKLIST.md) 를 함께 참고하는 것을 권장한다.
+
 ### 감지
 ```bash
 python -m src.cli detect-hardware --target stm32f3 --serial-port /dev/ttyUSB0
