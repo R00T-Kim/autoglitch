@@ -24,7 +24,6 @@ def _base_options() -> dict:
         "serial_port": None,
         "serial_timeout": None,
         "binding_file": None,
-        "binding_file": None,
         "require_preflight": False,
         "rerun_count": 1,
         "fixed_seed": 123,
