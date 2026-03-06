@@ -15,6 +15,7 @@
 - **지식 계층 베이스라인**: `kb-ingest`/`kb-query` 로컬 지식 저장소
 - **추적 고도화**: campaign summary `schema_version: 6`, JSONL decision trace + apply metadata 포함
 - **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
+- **CLI 계층 분해**: `src.cli`는 facade/dispatch를 담당하고 parser/runtime/execution/batch/preflight/agentic helper는 전용 모듈로 분리
 
 ---
 
