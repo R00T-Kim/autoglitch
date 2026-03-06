@@ -117,6 +117,43 @@ def test_doctor_hardware_reports_missing_binding_when_no_candidates(monkeypatch:
     assert "missing_local_binding" in codes
 
 
+def test_doctor_hardware_degrades_when_healthcheck_fails(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config = _base_config()
+    config["hardware"]["binding_file"] = str(tmp_path / "hardware.yaml")
+    store = HardwareBindingStore(Path(config["hardware"]["binding_file"]))
+    store.save(
+        HardwareBinding(
+            adapter_id="serial-json-hardware",
+            profile="serial-json-hardware",
+            transport="serial",
+            location="/dev/ttyUSB_STALE",
+        ),
+        selected_from="unit-test",
+        candidates=[],
+    )
+    monkeypatch.setattr(
+        "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
+        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: None),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "src.hardware.serial_hardware.SerialCommandHardware.probe",
+        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: None),  # noqa: ARG005
+    )
+    monkeypatch.setattr(
+        "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.healthcheck",
+        lambda self: (_ for _ in ()).throw(RuntimeError("serial unavailable")),
+    )
+
+    report = doctor_hardware(config=config)
+
+    assert report["status"] == "degraded"
+    codes = {item["code"] for item in report["findings"]}
+    assert "healthcheck_failed" in codes
+
+
 def test_default_registry_loads_official_profiles() -> None:
     registry = build_default_registry()
     assert {"mock-hardware", "serial-command-hardware", "serial-json-hardware"}.issubset(
