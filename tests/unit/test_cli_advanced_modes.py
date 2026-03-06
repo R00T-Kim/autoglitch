@@ -365,6 +365,49 @@ def test_queue_run_parallel_requires_continue_on_error(tmp_path) -> None:
         raise AssertionError("expected SystemExit")
 
 
+def test_queue_run_parallel_detects_serial_template_jobs(tmp_path) -> None:
+    queue_file = tmp_path / "queue_serial_guard.yaml"
+    queue_file.write_text(
+        "\n".join(
+            [
+                "schema_version: 1",
+                "defaults:",
+                "  config: configs/default.yaml",
+                "jobs:",
+                "  - name: serial_job",
+                "    template: experiments/configs/soak_hil_stm32f3.yaml",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    args = argparse.Namespace(
+        queue=str(queue_file),
+        plugin_dir=[],
+        checkpoint_file=str(tmp_path / "checkpoint.json"),
+        resume=False,
+        continue_on_error=True,
+        respect_order=False,
+        max_workers=2,
+        job_interval_s=0.0,
+        allow_parallel_serial=False,
+        config_mode=None,
+        serial_io=None,
+        rl_backend=None,
+        ai_mode=None,
+        policy_file=None,
+        require_preflight=False,
+        run_tag=None,
+    )
+
+    try:
+        _queue_run(args)
+    except SystemExit as exc:
+        assert "parallel serial queue is blocked by default" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit")
+
+
 def test_soak_run_parallel_workers(tmp_path, monkeypatch, capsys) -> None:
     def _fake_execute_campaign(_args: argparse.Namespace) -> dict:
         return {
@@ -396,6 +439,23 @@ def test_soak_run_parallel_workers(tmp_path, monkeypatch, capsys) -> None:
     assert out["new_batches"] == 4
     assert out["completed_batches"] == 4
     assert out["failed_batches"] == 0
+
+
+def test_soak_run_parallel_detects_serial_template(tmp_path) -> None:
+    args = _soak_args(
+        tmp_path,
+        template="experiments/configs/soak_hil_stm32f3.yaml",
+        hardware=None,
+        max_workers=2,
+        continue_on_error=True,
+    )
+
+    try:
+        _soak_run(args)
+    except SystemExit as exc:
+        assert "parallel serial soak is blocked by default" in str(exc)
+    else:
+        raise AssertionError("expected SystemExit")
 
 
 def test_soak_run_require_preflight_executes_once(tmp_path, monkeypatch, capsys) -> None:
