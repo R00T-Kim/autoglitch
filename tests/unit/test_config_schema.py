@@ -19,7 +19,7 @@ def test_strict_schema_accepts_default_merged_config() -> None:
     errors = validate_config(config, mode="strict")
     assert errors == []
     parsed = parse_autoglitch_config(config)
-    assert parsed.config_version == 2
+    assert parsed.config_version == 3
     assert parsed.target.name == "STM32F303"
 
 
@@ -32,13 +32,13 @@ def test_strict_schema_rejects_string_numeric_values() -> None:
     assert any("experiment.seed" in item for item in errors)
 
 
-def test_strict_schema_requires_config_version_2() -> None:
+def test_strict_schema_requires_config_version_3() -> None:
     config = _merged_default()
     config = copy.deepcopy(config)
     config["config_version"] = 1
 
     errors = validate_config(config, mode="strict")
-    assert any("config_version" in item and "requires config_version: 2" in item for item in errors)
+    assert any("config_version" in item and "requires config_version: 3" in item for item in errors)
 
 
 def test_legacy_mode_keeps_backward_compatibility_for_numeric_strings() -> None:

@@ -153,6 +153,7 @@ def test_run_single_campaign_disconnects_hardware_and_ends_tracker_on_failure(mo
         hardware="mock",
         serial_port=None,
         serial_timeout=None,
+        binding_file=None,
         serial_io=None,
         run_tag="unit",
     )

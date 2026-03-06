@@ -26,6 +26,7 @@ def _run_args(**overrides) -> argparse.Namespace:
         "hardware": "mock",
         "serial_port": None,
         "serial_timeout": None,
+        "binding_file": None,
         "serial_io": None,
         "require_preflight": False,
         "rerun_count": 1,

@@ -13,6 +13,7 @@ def test_default_registry_loads_builtin_manifests() -> None:
 
     assert plugins
     assert registry.get("mock-hardware") is not None
+    assert registry.get("serial-json-hardware") is not None
 
 
 def test_registry_loads_extra_manifest_directory(tmp_path: Path) -> None:

@@ -85,3 +85,12 @@ def test_controller_rejects_out_of_range() -> None:
     else:
         raise AssertionError("expected ValueError")
 
+
+
+def test_controller_handles_typed_hello() -> None:
+    cfg = RPiBridgeConfig(control_port="/dev/null", glitch_pin=18)
+    gpio = FakeGPIO()
+    controller = RPiGlitchController(config=cfg, gpio_backend=gpio)
+
+    response = controller.handle_line('{"command":"hello"}')
+    assert b'autoglitch.v1' in response
