@@ -1,4 +1,4 @@
-config_version: 2
+config_version: 3
 defaults:
 - _self_
 - target: stm32f3
@@ -55,8 +55,28 @@ hardware:
       enabled: true
       probe_trials: 30
       max_timeout_rate: 0.05
-      max_reset_rate: 0.10
-      max_p95_latency_s: 0.50
+      max_reset_rate: 0.1
+      max_p95_latency_s: 0.5
+  adapter: auto
+  preferred_adapter: null
+  transport: auto
+  profile: auto
+  auto_detect: true
+  binding_file: configs/local/hardware.yaml
+  profile_dirs: []
+  required_capabilities:
+  - glitch.execute
+  discovery:
+    enabled: true
+    candidate_ports: []
+    port_globs:
+    - /dev/ttyUSB*
+    - /dev/ttyACM*
+    - /dev/tty.usbserial*
+    - /dev/tty.usbmodem*
+    - /dev/cu.usbserial*
+    - /dev/cu.usbmodem*
+    probe_timeout_s: 0.25
 glitch:
   parameters:
     width:
@@ -93,7 +113,7 @@ safety:
 plugins:
   manifest_dirs: []
 ai:
-  mode: "off"
+  mode: 'off'
   provider: local
   model: heuristic-planner-v1
   planner_interval_trials: 50
@@ -103,19 +123,19 @@ ai:
   fallback_on_policy_reject: true
 policy:
   allowed_fields:
-    - optimizer.bo.candidate_pool_size
-    - optimizer.bo.objective_mode
-    - optimizer.bo.multi_objective_weights.*
-    - optimizer.bo.vectorized_heuristic
-    - optimizer.rl.train_interval
-    - optimizer.rl.learning_rate
-    - experiment.success_threshold
+  - optimizer.bo.candidate_pool_size
+  - optimizer.bo.objective_mode
+  - optimizer.bo.multi_objective_weights.*
+  - optimizer.bo.vectorized_heuristic
+  - optimizer.rl.train_interval
+  - optimizer.rl.learning_rate
+  - experiment.success_threshold
   hard_limits:
     optimizer.bo.candidate_pool_size:
       min: 32
       max: 512
     optimizer.rl.learning_rate:
-      min: 0.000001
+      min: 1.0e-06
       max: 0.01
     experiment.success_threshold:
       min: 0.05

@@ -1,0 +1,21 @@
+adapter_id: serial-json-hardware
+display_name: Typed Serial Bridge
+transport: serial
+protocol: autoglitch.v1
+supported_targets:
+  - stm32f303
+  - esp32
+  - nrf52832
+  - stm32f3
+  - nrf52
+  - '*'
+capabilities:
+  - glitch.execute
+  - target.reset
+  - target.trigger
+  - healthcheck
+default_baudrate: 115200
+default_timeout_s: 0.25
+max_confidence: 0.99
+metadata:
+  handshake: '{"command":"hello"}'

@@ -27,3 +27,17 @@ def test_bridge_handle_reset_and_trigger() -> None:
     finally:
         bridge.close()
 
+
+
+def test_bridge_handles_typed_hello_and_execute() -> None:
+    bridge = MockGlitchBridge(seed=123)
+    try:
+        hello = bridge.handle_command('{"command":"hello"}')
+        assert b'autoglitch.v1' in hello
+
+        execute = bridge.handle_command(
+            '{"command":"execute","payload":{"width":10.0,"offset":2.0,"voltage":-0.2,"repeat":2,"ext_offset":0.0}}'
+        )
+        assert b'serial_output' in execute
+    finally:
+        bridge.close()

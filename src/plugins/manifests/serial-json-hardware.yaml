@@ -1,0 +1,17 @@
+name: serial-json-hardware
+kind: hardware
+version: 1.0.0
+module: src.hardware.typed_serial_hardware
+class_name: TypedSerialCommandHardware
+description: Typed serial adapter for the autoglitch.v1 JSONL bridge protocol.
+capabilities:
+  - serial
+  - live-target
+  - autoglitch.v1
+supported_targets:
+  - stm32f3
+  - esp32
+  - nrf52
+limits:
+  requires_serial_port: true
+  protocol: autoglitch.v1

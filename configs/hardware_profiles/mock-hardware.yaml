@@ -1,0 +1,12 @@
+adapter_id: mock-hardware
+display_name: Mock Hardware
+transport: virtual
+protocol: simulation
+supported_targets:
+  - '*'
+capabilities:
+  - simulation
+  - glitch.execute
+max_confidence: 0.99
+metadata:
+  class: mock

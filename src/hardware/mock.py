@@ -6,16 +6,33 @@ from dataclasses import dataclass
 import numpy as np
 
 from ..types import GlitchParameters, RawResult
+from .base import BaseHardwareAdapter
 
 
 @dataclass
-class MockHardware:
+class MockHardware(BaseHardwareAdapter):
     """글리치 파라미터 기반으로 확률적 결과를 생성하는 모의 장비."""
 
     seed: int = 42
 
     def __post_init__(self) -> None:
         self._rng = np.random.default_rng(self.seed)
+
+    adapter_id: str = "mock-hardware"
+    transport: str = "virtual"
+
+    def connect(self) -> None:
+        return None
+
+    def disconnect(self) -> None:
+        return None
+
+    def healthcheck(self) -> dict[str, bool]:
+        return {"ok": True}
+
+    def get_capabilities(self) -> list[str]:
+        return ["simulation", "glitch.execute"]
+
 
     def execute(self, params: GlitchParameters) -> RawResult:
         score = self._fault_score(params)

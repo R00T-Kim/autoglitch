@@ -5,7 +5,7 @@
 ## 최근 소프트웨어 업데이트 (2026-03-06)
 
 - **Strict Config 계층**: `pydantic` 기반 strict schema 검증 (`--config-mode strict|legacy`)
-- **Config v2 기준선**: strict mode는 `config_version: 2`를 요구하고 `recovery`/`ext_offset`를 포함
+- **Config v3 기준선**: strict mode는 `config_version: 3`를 요구하고 `recovery`/`ext_offset` + hardware binding/discovery 필드를 포함
 - **Serial I/O 모드 분리**: `sync`(기본) + `async` 옵션 (`--serial-io async`) + persistent/reconnect 상태머신
 - **Async serial sync-wrapper 안정화**: 이미 실행 중인 event loop 안에서도 동작
 - **HIL 사전검증 게이트**: `hil-preflight` + `--require-preflight`로 serial 안정성 확인 후 캠페인 실행
@@ -16,6 +16,11 @@
 - **추적 고도화**: campaign summary `schema_version: 6`, JSONL decision trace + apply metadata 포함
 - **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
 - **CLI 계층 분해**: `src.cli`는 facade/dispatch를 담당하고 parser/runtime/execution/batch/preflight/agentic helper는 전용 모듈로 분리
+- **범용 하드웨어 프레임워크**: transport-agnostic registry + official hardware profiles + local binding store(`configs/local/hardware.yaml`)
+- **장비 온보딩 명령**: `detect-hardware` / `setup-hardware` / `doctor-hardware` 추가
+- **프로토콜 이중화**: typed serial `autoglitch.v1`를 기본 권장 경로로, legacy text serial은 fallback으로 유지
+- **하드웨어 프레임워크 v1**: transport-agnostic registry/profile/binding 계층 + `detect-hardware`/`setup-hardware`/`doctor-hardware` 추가
+- **Serial protocol 이원화**: `autoglitch.v1` typed JSONL 경로(`serial-json-hardware`) + legacy text fallback(`serial-command-hardware`)
 
 ---
 
@@ -43,6 +48,7 @@
 ## 1. 전체 개요
 
 AUTOGLITCH는 voltage/clock fault injection 공격을 자동화하는 closed-loop 시스템이다.
+현재는 optimizer/orchestrator 루프 위에 **transport-agnostic hardware framework** 가 올라가며, 지원 장비는 probe → binding → preflight → run 흐름으로 연결된다.
 핵심 아이디어는 다음과 같다:
 
 - **AI가 장비를 직접 제어**하여 글리치를 실행한다.
@@ -71,7 +77,7 @@ AI가 자율적으로 수행하는 것이 목표다.
 | 원칙 | 설명 |
 |------|------|
 | **Closed-Loop** | 파라미터 제안 → 실행 → 관측 → 분류 → 피드백의 완전 자동 루프 |
-| **하드웨어 추상화** | 글리처/타깃/오실로스코프를 ABC로 추상화하여 장비 교체 가능 |
+| **하드웨어 추상화** | adapter/profile/binding 구조로 transport와 장비 프로파일을 분리하고 로컬 바인딩으로 실행 경로를 고정 |
 | **AI = 제어자, LLM = 자문역** | 숫자 최적화는 BO/RL, LLM은 고차원 전략만 담당 |
 | **Fault-to-Primitive** | 단순 fault 발견이 아닌 exploit 가능 여부까지 자동 판정 |
 | **재현성** | 모든 trial을 MLflow로 추적, 시드 고정, 설정 YAML 분리 |
@@ -294,83 +300,59 @@ class GlitchParameters:
 
 **경로:** `src/hardware/`
 
-**역할:** 물리적 하드웨어 장비(글리처, 타깃, 오실로스코프)를
-추상화하여 나머지 시스템이 장비 종류에 의존하지 않도록 한다.
+**역할:** 물리 장비/브리지/시뮬레이터를 transport-agnostic 하게 추상화하고,
+자동 감지·로컬 바인딩·프로파일 기반 실행을 제공한다.
 
-**핵심 클래스:**
+**현재 핵심 계층:**
 
 ```python
-# ── 글리처 추상화 ──
+class BaseHardwareAdapter(ABC):
+    adapter_id: str
+    transport: str
 
-class BaseGlitcher(ABC):
-    """글리치 장비의 추상 인터페이스."""
-
-    @abstractmethod
-    def configure(self, params: GlitchParameters) -> None:
-        """글리치 파라미터를 장비에 설정한다."""
-        ...
-
-    @abstractmethod
-    def arm(self) -> None:
-        """글리치 트리거 대기 상태로 전환한다."""
-        ...
-
-    @abstractmethod
-    def execute(self) -> RawResult:
-        """글리치를 실행하고 원시 결과를 반환한다."""
-        ...
-
-    @abstractmethod
-    def disarm(self) -> None:
-        """글리치 해제 및 안전 상태로 복귀한다."""
-        ...
+    def connect(self) -> None: ...
+    def disconnect(self) -> None: ...
+    def execute(self, params: GlitchParameters) -> RawResult: ...
+    def healthcheck(self) -> dict[str, Any]: ...
+    def get_capabilities(self) -> list[str]: ...
+    def reset_target(self) -> None: ...
+    def trigger_target(self) -> None: ...
 
 
-class ChipWhispererGlitcher(BaseGlitcher):
-    """ChipWhisperer 보드 기반 글리처 구현."""
-    ...
+@dataclass(frozen=True)
+class HardwareProfile:
+    adapter_id: str
+    display_name: str
+    transport: str
+    protocol: str
+    capabilities: tuple[str, ...]
 
 
-# ── 타깃 추상화 ──
-
-class BaseTarget(ABC):
-    """글리치 대상 디바이스의 추상 인터페이스."""
-
-    @abstractmethod
-    def reset(self) -> None:
-        """타깃을 리셋한다."""
-        ...
-
-    @abstractmethod
-    def send_trigger(self) -> None:
-        """글리치 트리거 신호를 보낸다."""
-        ...
-
-    @abstractmethod
-    def read_response(self, timeout: float = 1.0) -> bytes:
-        """타깃의 응답을 읽는다."""
-        ...
-
-
-class SerialTarget(BaseTarget):
-    """UART 시리얼 인터페이스 타깃."""
-    ...
-
-class JTAGTarget(BaseTarget):
-    """JTAG 디버그 인터페이스 타깃."""
-    ...
-
-
-# ── 오실로스코프 추상화 ──
-
-class BaseScope(ABC):
-    """오실로스코프 추상 인터페이스."""
-
-    @abstractmethod
-    def capture_waveform(self) -> np.ndarray:
-        """파형을 캡처하여 numpy 배열로 반환한다."""
-        ...
+@dataclass
+class HardwareBinding:
+    adapter_id: str
+    transport: str
+    location: str
+    baudrate: int | None
+    timeout_s: float | None
 ```
+
+**런타임 경로:**
+- `HardwareRegistry`가 공식 프로파일(`configs/hardware_profiles/*.yaml`)을 로드
+- `detect-hardware`가 후보를 스캔/정렬
+- `setup-hardware`가 선택 결과를 `configs/local/hardware.yaml`에 저장
+- `run`/`soak`/`queue-run`/`hil-preflight`는 explicit override → local binding → auto-detect 순으로 해석
+
+**현재 공식 adapter:**
+| Adapter | Transport | Protocol | 역할 |
+|--------|-----------|----------|------|
+| `mock-hardware` | virtual | simulation | 로컬 테스트/재현성 |
+| `serial-json-hardware` | serial | `autoglitch.v1` | 권장 typed bridge 경로 |
+| `serial-command-hardware` | serial | legacy text | 구형 bridge fallback |
+
+**Bridge/protocol 메모:**
+- `src.tools.mock_glitch_bridge`, `src.tools.rpi_glitch_bridge`는 `autoglitch.v1` JSONL hello/health/execute/reset/trigger를 지원한다.
+- legacy `GLITCH width=...` text protocol도 계속 지원하지만, 신규 장비 온보딩은 typed protocol 기준이다.
 
 **안전 장치:**
 

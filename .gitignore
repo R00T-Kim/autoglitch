@@ -107,3 +107,6 @@ secrets.yml
 # Local OMX/Codex runtime state
 .omx/
 .omc/
+
+# Local hardware bindings
+configs/local/

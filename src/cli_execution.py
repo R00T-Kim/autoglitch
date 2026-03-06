@@ -20,6 +20,7 @@ from .cli_support import (
     _snapshot_optimizer_telemetry,
     _write_json_report,
 )
+from .hardware import hardware_binding_lock
 from .llm_advisor import LLMAdvisor
 from .logging_viz import ExperimentLogger
 from .mapper import PrimitiveMapper
@@ -223,27 +224,28 @@ def run_single_campaign(
     )
     mlflow_status = "FAILED"
     try:
-        ai_mode = _resolve_ai_mode(args, run_config)
-        policy_file = _resolve_policy_file(args, run_config)
-        if ai_mode == "off":
-            campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
-            agentic_meta = {
-                "mode": "off",
-                "events": [],
-                "policy_reject_count": 0,
-                "agentic_interventions": 0,
-                "trace_report": None,
-            }
-        else:
-            campaign, agentic_meta = _run_campaign_agentic(
-                orchestrator=orchestrator,
-                optimizer=optimizer,
-                run_config=run_config,
-                n_trials=trials,
-                target_primitive=target_primitive,
-                ai_mode=ai_mode,
-                policy_file=policy_file,
-            )
+        with hardware_binding_lock(getattr(args, "resolved_hardware_binding", None), timeout_s=0.0):
+            ai_mode = _resolve_ai_mode(args, run_config)
+            policy_file = _resolve_policy_file(args, run_config)
+            if ai_mode == "off":
+                campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
+                agentic_meta = {
+                    "mode": "off",
+                    "events": [],
+                    "policy_reject_count": 0,
+                    "agentic_interventions": 0,
+                    "trace_report": None,
+                }
+            else:
+                campaign, agentic_meta = _run_campaign_agentic(
+                    orchestrator=orchestrator,
+                    optimizer=optimizer,
+                    run_config=run_config,
+                    n_trials=trials,
+                    target_primitive=target_primitive,
+                    ai_mode=ai_mode,
+                    policy_file=policy_file,
+                )
 
         optimizer_telemetry = _snapshot_optimizer_telemetry(optimizer)
         summary_path = logger_viz.write_campaign_summary(
@@ -271,6 +273,8 @@ def run_single_campaign(
             "seed": run_seed,
             "run_tag": run_tag,
             "ai_mode": ai_mode,
+            "resolved_hardware_binding": getattr(args, "resolved_hardware_binding", None),
+            "resolved_hardware_source": getattr(args, "resolved_hardware_source", None),
             "campaign_id": campaign.campaign_id,
             "n_trials": campaign.n_trials,
             "success_rate": campaign.success_rate,

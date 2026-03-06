@@ -1,13 +1,47 @@
-"""하드웨어 인터페이스 추상 클래스"""
+"""Hardware interface abstractions."""
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
+from typing import Any
 
 import numpy as np
 
 from ..types import GlitchParameters, RawResult
 
 
+class BaseHardwareAdapter(ABC):
+    """Transport-agnostic hardware adapter contract."""
+
+    adapter_id: str = "unknown"
+    transport: str = "unknown"
+
+    @abstractmethod
+    def connect(self) -> None:
+        """Connect to the backing device or service."""
+
+    @abstractmethod
+    def disconnect(self) -> None:
+        """Release the backing device or service."""
+
+    @abstractmethod
+    def execute(self, params: GlitchParameters) -> RawResult:
+        """Execute one glitch attempt and return raw result data."""
+
+    def healthcheck(self) -> dict[str, Any]:
+        return {"ok": True}
+
+    def get_capabilities(self) -> list[str]:
+        return []
+
+    def reset_target(self) -> None:
+        return None
+
+    def trigger_target(self) -> None:
+        return None
+
+
 class BaseGlitcher(ABC):
-    """글리처 장비 추상 인터페이스"""
+    """글리처 장비 추상 인터페이스 (legacy contract)."""
 
     @abstractmethod
     def connect(self) -> None:

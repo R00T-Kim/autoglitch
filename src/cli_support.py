@@ -17,6 +17,7 @@ from typing import Any, cast
 import yaml  # type: ignore[import-untyped]
 
 from .config import validate_config
+from .hardware import binding_store_from_config, normalize_adapter_request
 from .plugins import PluginRegistry
 from .safety import SafetyController
 from .types import ExploitPrimitiveType, GlitchParameters
@@ -51,9 +52,11 @@ def _resolve_effective_hardware_mode(
     args: argparse.Namespace,
     config: dict[str, Any] | None = None,
 ) -> str:
-    cli_mode = getattr(args, "hardware", None)
-    if cli_mode:
-        return str(cli_mode).lower()
+    cli_mode = normalize_adapter_request(getattr(args, "hardware", None))
+    if cli_mode == "mock-hardware":
+        return "mock"
+    if cli_mode in {"serial-command-hardware", "serial-json-hardware"}:
+        return "serial"
 
     resolved_config = config
     if resolved_config is None:
@@ -62,6 +65,37 @@ def _resolve_effective_hardware_mode(
     hardware_cfg = resolved_config.get("hardware", {})
     if not isinstance(hardware_cfg, dict):
         return "mock"
+
+    local_binding = None
+    try:
+        local_binding = binding_store_from_config(
+            resolved_config,
+            getattr(args, "binding_file", None),
+        ).load()
+    except Exception:
+        local_binding = None
+
+    if local_binding is not None:
+        if local_binding.transport == "serial":
+            return "serial"
+        if local_binding.transport == "virtual":
+            return "mock"
+        return str(local_binding.transport).lower()
+
+    adapter_raw = hardware_cfg.get("adapter")
+    if str(adapter_raw or "").lower() in {"", "auto", "none"}:
+        adapter_raw = hardware_cfg.get("mode")
+    adapter = normalize_adapter_request(adapter_raw)
+    if adapter == "mock-hardware":
+        return "mock"
+    if adapter in {"serial-command-hardware", "serial-json-hardware"}:
+        return "serial"
+
+    transport = str(hardware_cfg.get("transport", "")).lower()
+    if transport:
+        if transport == "virtual":
+            return "mock"
+        return transport
 
     return str(hardware_cfg.get("mode", "mock")).lower()
 
@@ -116,6 +150,7 @@ def _build_run_namespace(options: dict[str, Any], cli_plugin_dirs: Iterable[str]
         serial_port=options.get("serial_port"),
         serial_timeout=options.get("serial_timeout"),
         serial_io=options.get("serial_io"),
+        binding_file=options.get("binding_file"),
         require_preflight=bool(options.get("require_preflight", False)),
         rerun_count=options.get("rerun_count"),
         fixed_seed=options.get("fixed_seed"),

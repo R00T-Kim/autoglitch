@@ -1,17 +1,20 @@
-"""Serial 기반 실장비 어댑터."""
+"""Legacy text-protocol serial hardware adapter."""
 from __future__ import annotations
 
+import json
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable
+from typing import Any
 
 from ..types import GlitchParameters, RawResult
+from .base import BaseHardwareAdapter
 
 SerialFactory = Callable[..., object]
 
 
 @dataclass
-class SerialCommandHardware:
+class SerialCommandHardware(BaseHardwareAdapter):
     """시리얼 명령 기반 글리치 장비 어댑터.
 
     장비/펌웨어가 아래 형태의 텍스트 프로토콜을 지원한다고 가정한다.
@@ -30,6 +33,9 @@ class SerialCommandHardware:
     trigger_command: str = ""
     serial_factory: SerialFactory | None = None
 
+    adapter_id: str = "serial-command-hardware"
+    transport: str = "serial"
+
     def __post_init__(self) -> None:
         self._serial: object | None = None
 
@@ -46,6 +52,27 @@ class SerialCommandHardware:
             if callable(close):
                 close()
         self._serial = None
+
+    def healthcheck(self) -> dict[str, Any]:
+        response = self._read_command_response("HELLO")
+        lowered = response.lower()
+        ok = bool(response) and not lowered.startswith(b"err")
+        return {
+            "ok": ok,
+            "protocol": "legacy-text",
+            "response": response.decode("utf-8", errors="replace"),
+        }
+
+    def get_capabilities(self) -> list[str]:
+        return ["glitch.execute", "target.reset", "target.trigger"]
+
+    def reset_target(self) -> None:
+        if self.reset_command:
+            self._write_line(self.reset_command)
+
+    def trigger_target(self) -> None:
+        if self.trigger_command:
+            self._write_line(self.trigger_command)
 
     def execute(self, params: GlitchParameters) -> RawResult:
         self.connect()
@@ -82,6 +109,11 @@ class SerialCommandHardware:
             error_code=error_code,
         )
 
+    def _read_command_response(self, command: str) -> bytes:
+        self.connect()
+        self._write_line(command)
+        return self._read_line()
+
     def _write_line(self, message: str) -> None:
         assert self._serial is not None
 
@@ -103,6 +135,51 @@ class SerialCommandHardware:
             return bytes(read(1024)).strip()
 
         raise RuntimeError("serial object has no read/read_until")
+
+    @classmethod
+    def probe(
+        cls,
+        *,
+        port: str,
+        baudrate: int,
+        timeout: float,
+        serial_factory: SerialFactory | None = None,
+    ) -> dict[str, Any] | None:
+        serial_obj = None
+        try:
+            factory = serial_factory or _default_serial_factory
+            serial_obj = factory(port, baudrate, timeout=timeout)
+            write = getattr(serial_obj, "write", None)
+            read_until = getattr(serial_obj, "read_until", None)
+            if not callable(write) or not callable(read_until):
+                return None
+            write(b"HELLO\n")
+            raw = bytes(read_until(b"\n")).strip()
+            if not raw:
+                return None
+            try:
+                payload = json.loads(raw.decode("utf-8", errors="replace"))
+            except json.JSONDecodeError:
+                payload = None
+            if isinstance(payload, dict) and payload.get("protocol") == "autoglitch.v1":
+                return None
+            lowered = raw.lower()
+            if lowered.startswith(b"err"):
+                return None
+            if b"pong" not in lowered and b"hello" not in lowered and b"ok" not in lowered:
+                return None
+            return {
+                "confidence": 0.88,
+                "reason": "legacy_text_handshake_ok",
+                "identity": {"banner": raw.decode("utf-8", errors="replace")},
+            }
+        except Exception:
+            return None
+        finally:
+            if serial_obj is not None:
+                close = getattr(serial_obj, "close", None)
+                if callable(close):
+                    close()
 
 
 def _default_serial_factory(port: str, baudrate: int, timeout: float):
