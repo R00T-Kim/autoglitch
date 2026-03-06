@@ -71,6 +71,19 @@ python -m src.cli hil-preflight \
 python -m src.cli run --target stm32f3 --require-preflight --trials 300
 ```
 
+### RC 최종 검증 워크플로우
+```bash
+python -m src.cli validate-hil-rc \
+  --target stm32f3 \
+  --serial-port /dev/ttyUSB0 \
+  --manual-bridge-restart-ok \
+  --manual-link-drop-ok
+```
+
+- 기본 경로는 typed serial(`autoglitch.v1`)이며, legacy text serial은 smoke만 수행한다.
+- 이 명령은 software gate, typed onboarding, preflight, warmup/stability/repro, soak/resume, queue/binding guard, legacy smoke를 하나의 RC report로 묶는다.
+- bridge 재시작/링크 드롭 같은 recovery drill은 자동 검증이 아니므로, 실험자가 실제 수행 후 confirmation flag로 승인해야 한다.
+
 ## 5) soak / queue
 ### soak
 ```bash
@@ -156,6 +169,7 @@ python -m src.cli replay \
 - Queue summary: `experiments/results/queue_*.json`
 - Soak summary: `experiments/results/soak_*.json`
 - HIL preflight summary: `experiments/results/hil_preflight_*.json`
+- RC HIL validation summary: `experiments/results/hil_rc_validation_*.json`
 - Agentic trace: `experiments/results/agentic_trace_*.jsonl`
 
 ## 10) 권장 체크리스트
@@ -164,5 +178,6 @@ python -m src.cli replay \
 3. `setup-hardware`
 4. `doctor-hardware`
 5. `hil-preflight`
-6. `run` / `soak` / `queue-run`
-7. 결과는 summary + manifest + trace까지 함께 보관
+6. `validate-hil-rc`
+7. `run` / `soak` / `queue-run`
+8. 결과는 summary + manifest + trace까지 함께 보관

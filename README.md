@@ -19,9 +19,10 @@ BO/RL 기반 파라미터 탐색, 하드웨어 실행, 관측/분류, primitive 
   - **`autoglitch.v1` typed JSONL protocol** (`serial-json-hardware`)
   - **legacy text protocol** (`serial-command-hardware`)
 - 로컬 장비 바인딩은 기본적으로 **`configs/local/hardware.yaml`** 에 저장됩니다.
+- RC급 실장비 검증 워크플로우는 **`validate-hil-rc`** 명령으로 자동화됩니다.
 
 현재 소프트웨어 검증 상태(2026-03-06):
-- `pytest -q` → **`105 passed, 3 skipped`**
+- `pytest -q` → **`111 passed, 3 skipped`**
 - typed serial adapter / hardware detection / local binding / CLI hardware onboarding 경로 포함
 
 ## 설치
@@ -62,6 +63,18 @@ python -m src.cli run --target stm32f3 --require-preflight --trials 100
 
 > `setup-hardware` 이후에는 `run/soak/queue-run/hil-preflight` 가 기본적으로 로컬 바인딩을 사용합니다.
 
+## RC HIL 검증
+```bash
+python -m src.cli validate-hil-rc \
+  --target stm32f3 \
+  --serial-port /dev/ttyUSB0 \
+  --manual-bridge-restart-ok \
+  --manual-link-drop-ok
+```
+
+> `validate-hil-rc` 는 typed serial을 기준으로 preflight, warmup/stability/repro, soak/resume, queue/binding guard, legacy smoke까지 묶어 리포트를 남깁니다.  
+> bridge 재시작/링크 드롭 같은 수동 복구 드릴은 **실험자가 실제로 수행한 뒤 confirmation flag** 로 표시해야 최종 RC 판정을 내릴 수 있습니다.
+
 ## 장비 없이 serial 경로 확인
 ```bash
 python -m src.tools.mock_glitch_bridge --port-file /tmp/autoglitch_mock_bridge.port
@@ -77,6 +90,7 @@ python -m src.cli run --target stm32f3 --trials 20
 4. `doctor-hardware`
 5. `hil-preflight`
 6. `run` / `soak` / `queue-run`
+7. RC 최종 검증은 `validate-hil-rc`
 
 ## 자주 쓰는 명령
 - `run`: 단일 캠페인 실행
@@ -85,6 +99,7 @@ python -m src.cli run --target stm32f3 --trials 20
 - `setup-hardware`: 로컬 하드웨어 바인딩 생성/갱신
 - `doctor-hardware`: 로컬 바인딩/감지/헬스 진단
 - `hil-preflight`: serial HIL 사전 안정성 점검
+- `validate-hil-rc`: typed serial 기준 RC HIL 검증 + soak/guard/legacy smoke 리포트
 - `soak`: 장시간 배치 실행 + 체크포인트/재개
 - `queue-run`: 다중 job 실행
 - `train-rl`, `eval-rl`: RL 백엔드 학습/평가
@@ -146,7 +161,7 @@ legacy bridge는 기존 `GLITCH width=... offset=...` 텍스트 프로토콜로 
 ## 품질 확인
 ```bash
 python -m compileall src tests
-ruff check src/hardware/framework.py src/hardware/typed_serial_hardware.py src/cli_hardware.py --select E,F,I,SIM,B --ignore E501
+ruff check src/hardware/framework.py src/hardware/typed_serial_hardware.py src/cli_hardware.py src/cli_validation.py --select E,F,I,SIM,B --ignore E501
 python -m mypy --follow-imports=silent \
   src/hardware/framework.py \
   src/hardware/typed_serial_hardware.py \
@@ -155,6 +170,7 @@ python -m mypy --follow-imports=silent \
   src/cli_hardware.py \
   src/cli_preflight.py \
   src/cli_support.py \
+  src/cli_validation.py \
   src/tools/mock_glitch_bridge.py \
   src/tools/rpi_glitch_bridge.py
 pytest -q

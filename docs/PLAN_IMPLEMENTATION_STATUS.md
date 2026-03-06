@@ -30,7 +30,7 @@
   - async serial persistence + reconnect
   - vectorized BO telemetry
   - schema v4 latency/Pareto summary
-- Current test status (2026-03-06): `105 passed, 3 skipped`.
+- Current test status (2026-03-06): `111 passed, 3 skipped`.
 
 ## 🔜 Next phase candidates
 - SB3 true online/offline training path (callbacks/checkpoint/eval integration)
@@ -120,7 +120,7 @@
 - Validation:
   - CLI-focused regression suite passed after each extraction stage
   - targeted Ruff and targeted mypy for all extracted CLI modules passed
-  - full `pytest -q` remained green (`105 passed, 3 skipped`)
+  - full `pytest -q` remained green (`111 passed, 3 skipped`)
 
 
 ## ✅ Additional implementation (Phase 6, 2026-03-06)
@@ -143,4 +143,13 @@
   - Raspberry Pi bridge now speaks both legacy text and typed JSONL
 - Validation:
   - added tests for typed serial adapter, hardware framework resolution, CLI onboarding commands, bridge typed protocol handling
-  - current test status: `105 passed, 3 skipped`
+  - current test status: `111 passed, 3 skipped`
+
+## ✅ Additional implementation (Phase 7, 2026-03-06)
+- RC HIL validation workflow implemented around `validate-hil-rc`:
+  - software gate + typed onboarding + preflight + warmup/stability/repro
+  - soak/resume + queue/binding guard drill
+  - legacy smoke + manual recovery confirmation flags
+- `doctor-hardware` now performs adapter healthchecks and degrades on stale local bindings.
+- Docs call out that bridge restart / serial link drop drills still require explicit operator confirmation in the lab.
+- Current test status updated to `111 passed, 3 skipped`.

@@ -32,7 +32,7 @@
 
 ### B. 테스트 실행시간 단축
 - `pytest-xdist`(`pytest -n auto`) 도입으로 unit test wall-time 단축 가능.
-- 현재 테스트 수(2026-03-06 기준 `105 passed, 3 skipped`) 기준으로 CI 체감 개선이 큼.
+- 현재 테스트 수(2026-03-06 기준 `111 passed, 3 skipped`) 기준으로 CI 체감 개선이 큼.
 
 ### C. 설정 검증 강도 상향
 - 현재 validator + safety 체크는 있음.
