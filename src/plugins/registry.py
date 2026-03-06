@@ -1,11 +1,13 @@
 """Plugin registry and manifest loader."""
 from __future__ import annotations
 
+import builtins
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
-import yaml
+import yaml  # type: ignore[import-untyped]
 
 
 @dataclass(frozen=True)
@@ -16,41 +18,47 @@ class PluginManifest:
     module: str
     class_name: str
     description: str = ""
-    capabilities: List[str] = field(default_factory=list)
-    supported_targets: List[str] = field(default_factory=list)
-    limits: Dict[str, Any] = field(default_factory=dict)
+    capabilities: list[str] = field(default_factory=list)
+    supported_targets: list[str] = field(default_factory=list)
+    limits: dict[str, Any] = field(default_factory=dict)
     source: str = "builtin"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
 
 class PluginRegistry:
     """Registry that discovers plugin manifests from local directories."""
 
-    def __init__(self, manifests: Optional[Iterable[PluginManifest]] = None):
-        self._plugins: Dict[str, PluginManifest] = {}
+    def __init__(self, manifests: Iterable[PluginManifest] | None = None):
+        self._plugins: dict[str, PluginManifest] = {}
         if manifests:
             for manifest in manifests:
                 self.register(manifest)
 
     def register(self, manifest: PluginManifest) -> None:
+        existing = self._plugins.get(manifest.name)
+        if existing is not None:
+            raise ValueError(
+                f"duplicate plugin manifest name: {manifest.name} "
+                f"({existing.source} vs {manifest.source})"
+            )
         self._plugins[manifest.name] = manifest
 
-    def list(self, kind: str | None = None) -> List[PluginManifest]:
+    def list(self, kind: str | None = None) -> list[PluginManifest]:
         manifests = list(self._plugins.values())
         if kind is None:
             return sorted(manifests, key=lambda item: (item.kind, item.name))
         return sorted((item for item in manifests if item.kind == kind), key=lambda item: item.name)
 
-    def get(self, name: str) -> Optional[PluginManifest]:
+    def get(self, name: str) -> PluginManifest | None:
         return self._plugins.get(name)
 
-    def snapshot(self) -> List[Dict[str, Any]]:
+    def snapshot(self) -> builtins.list[dict[str, Any]]:
         return [manifest.to_dict() for manifest in self.list()]
 
     @classmethod
-    def load_default(cls, extra_dirs: Optional[Iterable[Path]] = None) -> "PluginRegistry":
+    def load_default(cls, extra_dirs: Iterable[Path] | None = None) -> PluginRegistry:
         registry = cls()
         for manifest_path in _default_manifest_paths(extra_dirs):
             manifest = _load_manifest(manifest_path)
@@ -58,8 +66,7 @@ class PluginRegistry:
         return registry
 
 
-
-def _default_manifest_paths(extra_dirs: Optional[Iterable[Path]]) -> List[Path]:
+def _default_manifest_paths(extra_dirs: Iterable[Path] | None) -> list[Path]:
     manifests_dir = Path(__file__).resolve().parent / "manifests"
     manifest_paths = sorted(manifests_dir.glob("*.yaml"))
 
@@ -71,7 +78,7 @@ def _default_manifest_paths(extra_dirs: Optional[Iterable[Path]]) -> List[Path]:
 
     # de-duplicate while preserving order
     seen: set[Path] = set()
-    unique_paths: List[Path] = []
+    unique_paths: list[Path] = []
     for path in manifest_paths:
         resolved = path.resolve()
         if resolved in seen:

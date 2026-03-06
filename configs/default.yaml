@@ -1,4 +1,4 @@
-config_version: 1
+config_version: 2
 defaults:
 - _self_
 - target: stm32f3
@@ -73,6 +73,10 @@ glitch:
     repeat:
       min: 1
       max: 10
+    ext_offset:
+      min: 0.0
+      max: 1000000.0
+      step: 1.0
 safety:
   width_min: 0.0
   width_max: 50.0
@@ -81,6 +85,8 @@ safety:
   voltage_abs_max: 1.0
   repeat_min: 1
   repeat_max: 10
+  ext_offset_min: 0.0
+  ext_offset_max: 1000000.0
   min_cooldown_s: 0.0
   max_trials_per_minute: null
   auto_throttle: true

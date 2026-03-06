@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 from src.hardware.serial_async_hardware import AsyncSerialCommandHardware
@@ -105,3 +106,33 @@ def test_async_serial_hardware_reconnects_after_connection_error() -> None:
     result = hw.execute(GlitchParameters(width=3.0, offset=2.0, repeat=1, voltage=0.0))
     assert result.serial_output == b"ok"
     assert calls["count"] == 2
+
+
+def test_async_serial_hardware_sync_methods_work_with_running_event_loop() -> None:
+    reader = FakeAsyncReader([b"ok\n", b"ok-again\n"])
+    writer = FakeAsyncWriter()
+    calls = {"count": 0}
+
+    async def _factory(*_args: Any, **_kwargs: Any):
+        calls["count"] += 1
+        return reader, writer
+
+    hw = AsyncSerialCommandHardware(
+        port="/dev/ttyUSB_FAKE",
+        connection_factory=_factory,
+    )
+
+    async def _exercise() -> tuple[bytes, bytes]:
+        hw.connect()
+        first = hw.execute(GlitchParameters(width=4.0, offset=1.0, repeat=1, voltage=0.0))
+        second = hw.execute(GlitchParameters(width=5.0, offset=2.0, repeat=1, voltage=0.0))
+        hw.disconnect()
+        return first.serial_output, second.serial_output
+
+    first_output, second_output = asyncio.run(_exercise())
+
+    assert first_output == b"ok"
+    assert second_output == b"ok-again"
+    assert calls["count"] == 1
+    assert writer.closed is True
+    assert hw.connection_state == "disconnected"
