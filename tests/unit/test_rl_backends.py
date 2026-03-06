@@ -3,7 +3,6 @@ from __future__ import annotations
 from src.cli import _create_optimizer
 from src.optimizer import RLOptimizer, SB3Optimizer
 
-
 PARAM_SPACE = {
     "width": {"min": 0.0, "max": 50.0, "step": 0.1},
     "offset": {"min": 0.0, "max": 50.0, "step": 0.1},
