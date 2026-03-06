@@ -2,9 +2,14 @@
 from __future__ import annotations
 
 import argparse
+import copy
 from typing import Any, Dict
 
-from .hardware import MockHardware, SerialCommandHardware
+from .hardware import (
+    HardwareResolutionError,
+    build_default_registry,
+    resolve_hardware,
+)
 from .logging_viz import MLflowTracker
 from .optimizer import BayesianOptimizer, RLOptimizer, SB3Optimizer
 
@@ -26,6 +31,7 @@ def _create_mlflow_tracker(config: Dict[str, Any]) -> MLflowTracker:
         tracking_uri=str(tracking_uri) if tracking_uri else None,
         experiment_name=experiment_name,
     )
+
 
 def _create_optimizer(
     optimizer_type: str,
@@ -79,59 +85,31 @@ def _create_optimizer(
         vectorized_heuristic=bool(bo_cfg.get("vectorized_heuristic", True)),
     )
 
+
+
 def _create_hardware(args: argparse.Namespace, config: Dict[str, Any], seed: int):
-    hw_cfg = config.get("hardware", {})
-    mode = args.hardware or hw_cfg.get("mode", "mock")
-
-    if mode == "serial":
-        from .hardware import AsyncSerialCommandHardware
-
-        target_cfg = hw_cfg.get("target", {})
-        port = args.serial_port or target_cfg.get("port")
-        if not port:
-            raise SystemExit("serial hardware mode requires a port (config.hardware.target.port or --serial-port)")
-
-        timeout = float(args.serial_timeout if args.serial_timeout is not None else target_cfg.get("timeout", 1.0))
-        serial_cfg = hw_cfg.get("serial", {}) if isinstance(hw_cfg.get("serial", {}), dict) else {}
-        serial_io = str(getattr(args, "serial_io", None) or serial_cfg.get("io_mode", "sync")).lower()
-
-        serial_template = hw_cfg.get(
-            "serial_command_template",
-            (
-                "GLITCH width={width:.3f} offset={offset:.3f} "
-                "voltage={voltage:.3f} repeat={repeat:d} ext_offset={ext_offset:.3f}"
-            ),
+    registry = build_default_registry()
+    runtime_config = copy.deepcopy(config)
+    hardware_cfg = runtime_config.setdefault("hardware", {})
+    target_cfg = hardware_cfg.setdefault("target", {})
+    serial_cfg = hardware_cfg.setdefault("serial", {})
+    if getattr(args, "serial_timeout", None) is not None:
+        target_cfg["timeout"] = float(args.serial_timeout)
+    if getattr(args, "serial_io", None) is not None:
+        serial_cfg["io_mode"] = str(args.serial_io)
+    try:
+        resolution = resolve_hardware(
+            config=runtime_config,
+            explicit_adapter=getattr(args, "hardware", None),
+            explicit_port=getattr(args, "serial_port", None),
+            seed=seed,
+            registry=registry,
+            binding_file=getattr(args, "binding_file", None),
         )
+    except HardwareResolutionError as exc:
+        raise SystemExit(str(exc)) from exc
 
-        port_name = str(port)
-        baudrate = int(target_cfg.get("baudrate", 115200))
-        command_template = str(serial_template)
-        reset_command = str(hw_cfg.get("reset_command", ""))
-        trigger_command = str(hw_cfg.get("trigger_command", ""))
-
-        if serial_io == "async":
-            return AsyncSerialCommandHardware(
-                port=port_name,
-                baudrate=baudrate,
-                timeout=timeout,
-                command_template=command_template,
-                reset_command=reset_command,
-                trigger_command=trigger_command,
-                keep_open=bool(serial_cfg.get("keep_open", True)),
-                reconnect_attempts=int(serial_cfg.get("reconnect_attempts", 2)),
-                reconnect_backoff_s=float(serial_cfg.get("reconnect_backoff_s", 0.05)),
-            )
-
-        if serial_io != "sync":
-            raise SystemExit(f"unsupported serial io mode: {serial_io} (expected sync or async)")
-
-        return SerialCommandHardware(
-            port=port_name,
-            baudrate=baudrate,
-            timeout=timeout,
-            command_template=command_template,
-            reset_command=reset_command,
-            trigger_command=trigger_command,
-        )
-
-    return MockHardware(seed=seed)
+    hardware = registry.create(resolution.selected, runtime_config, seed)
+    args.resolved_hardware_binding = resolution.selected.to_dict()
+    args.resolved_hardware_source = resolution.source
+    return hardware

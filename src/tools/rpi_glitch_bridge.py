@@ -6,6 +6,7 @@ and translates them into GPIO pulses suitable for basic reset/trigger/crowbar co
 from __future__ import annotations
 
 import argparse
+import json
 import time
 from dataclasses import dataclass
 from typing import Protocol
@@ -123,6 +124,8 @@ class RPiGlitchController:
         line = command_line.strip()
         if not line:
             return b"ok"
+        if line.startswith("{"):
+            return self._handle_typed_line(line, target_serial=target_serial)
 
         upper = line.upper()
         if upper in {"PING", "HELLO"}:
@@ -146,13 +149,64 @@ class RPiGlitchController:
 
         return b"err unknown command"
 
+    def _handle_typed_line(self, command_line: str, *, target_serial=None) -> bytes:
+        payload = json.loads(command_line)
+        if not isinstance(payload, dict):
+            raise ValueError("typed command must be a JSON object")
+        command = str(payload.get("command", "")).lower()
+
+        if command == "hello":
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "protocol": "autoglitch.v1",
+                    "adapter_id": "serial-json-hardware",
+                    "transport": "serial",
+                    "identity": {"model": "rpi-bridge", "control_port": self.config.control_port},
+                    "capabilities": ["glitch.execute", "target.reset", "target.trigger", "healthcheck"],
+                }
+            ).encode("utf-8")
+        if command == "capabilities":
+            return json.dumps(
+                {"status": "ok", "capabilities": ["glitch.execute", "target.reset", "target.trigger", "healthcheck"]}
+            ).encode("utf-8")
+        if command == "health":
+            return json.dumps({"status": "ok", "ok": True}).encode("utf-8")
+        if command == "reset":
+            self.reset_target()
+            return json.dumps({"status": "ok", "message": "reset ok"}).encode("utf-8")
+        if command == "trigger":
+            self.trigger_once()
+            return json.dumps({"status": "ok", "message": "trigger ok"}).encode("utf-8")
+        if command == "execute":
+            params_payload = payload.get("payload", {})
+            if not isinstance(params_payload, dict):
+                raise ValueError("typed execute payload must contain a mapping `payload`")
+            params = GlitchParameters(
+                width=float(params_payload.get("width", 0.0)),
+                offset=float(params_payload.get("offset", 0.0)),
+                voltage=float(params_payload.get("voltage", 0.0)),
+                repeat=int(params_payload.get("repeat", 1)),
+                ext_offset=float(params_payload.get("ext_offset", 0.0)),
+            )
+            self.run_glitch(params)
+            target_line = self._read_target_line(target_serial)
+            return json.dumps(
+                {
+                    "status": "ok",
+                    "serial_output": target_line.decode("utf-8", errors="replace") if target_line else "glitch ok",
+                    "reset_detected": False,
+                    "error_code": None,
+                }
+            ).encode("utf-8")
+        return json.dumps({"status": "error", "message": f"unknown command: {command}"}).encode("utf-8")
+
     def run_glitch(self, params: GlitchParameters) -> None:
         self.initialize()
         self._validate_params(params)
 
-        if self.config.wait_for_trigger and self.config.trigger_in_pin is not None:
-            if not self._wait_for_trigger():
-                raise RuntimeError("trigger timeout")
+        if self.config.wait_for_trigger and self.config.trigger_in_pin is not None and not self._wait_for_trigger():
+            raise RuntimeError("trigger timeout")
 
         if params.offset > 0:
             self.gpio.sleep(params.offset / 1_000_000.0)

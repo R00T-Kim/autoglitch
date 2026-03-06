@@ -179,13 +179,43 @@ class HardwareSerialConfig(_BaseStrictModel):
         return self
 
 
+class HardwareDiscoveryConfig(_BaseStrictModel):
+    enabled: bool = True
+    candidate_ports: List[str] = Field(default_factory=list)
+    port_globs: List[str] = Field(
+        default_factory=lambda: [
+            "/dev/ttyUSB*",
+            "/dev/ttyACM*",
+            "/dev/tty.usbserial*",
+            "/dev/tty.usbmodem*",
+            "/dev/cu.usbserial*",
+            "/dev/cu.usbmodem*",
+        ]
+    )
+    probe_timeout_s: float = 0.25
+
+    @model_validator(mode="after")
+    def _validate_discovery(self) -> "HardwareDiscoveryConfig":
+        if self.probe_timeout_s <= 0:
+            raise ValueError("probe_timeout_s must be > 0")
+        return self
+
+
 class HardwarePeripheralConfig(_BaseStrictModel):
     type: str = "none"
     port: str | None = None
 
 
 class HardwareConfig(_BaseStrictModel):
-    mode: Literal["mock", "serial"] = "mock"
+    mode: Literal["mock", "serial", "auto"] = "mock"
+    adapter: str = "auto"
+    preferred_adapter: str | None = None
+    transport: str = "auto"
+    profile: str = "auto"
+    auto_detect: bool = True
+    binding_file: str = "configs/local/hardware.yaml"
+    profile_dirs: List[str] = Field(default_factory=list)
+    required_capabilities: List[str] = Field(default_factory=list)
     glitcher: HardwarePeripheralConfig = Field(default_factory=HardwarePeripheralConfig)
     target: HardwareTargetConfig = Field(default_factory=HardwareTargetConfig)
     oscilloscope: HardwarePeripheralConfig = Field(default_factory=HardwarePeripheralConfig)
@@ -196,6 +226,15 @@ class HardwareConfig(_BaseStrictModel):
     reset_command: str = ""
     trigger_command: str = ""
     serial: HardwareSerialConfig = Field(default_factory=HardwareSerialConfig)
+    discovery: HardwareDiscoveryConfig = Field(default_factory=HardwareDiscoveryConfig)
+
+    @model_validator(mode="after")
+    def _validate_hardware(self) -> "HardwareConfig":
+        if not self.binding_file:
+            raise ValueError("binding_file must not be empty")
+        if self.transport == "virtual" and self.adapter in {"serial-command-hardware", "serial-json-hardware"}:
+            raise ValueError("serial adapters require non-virtual transport")
+        return self
 
 
 class GlitchParametersConfig(_BaseStrictModel):
@@ -391,7 +430,7 @@ class ClassifierConfig(_BaseStrictModel):
 
 
 class AutoglitchConfig(_BaseStrictModel):
-    config_version: int = 2
+    config_version: int = 3
     defaults: List[Any] = Field(default_factory=list)
     experiment: ExperimentConfig
     optimizer: OptimizerConfig
@@ -410,8 +449,8 @@ class AutoglitchConfig(_BaseStrictModel):
     @field_validator("config_version")
     @classmethod
     def _validate_version(cls, value: int) -> int:
-        if value != 2:
-            raise ValueError("strict schema requires config_version: 2")
+        if value != 3:
+            raise ValueError("strict schema requires config_version: 3")
         return value
 
     @model_validator(mode="after")

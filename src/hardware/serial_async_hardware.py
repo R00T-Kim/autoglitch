@@ -13,6 +13,7 @@ from enum import Enum
 from typing import Any, Generic, TypeVar, cast
 
 from ..types import GlitchParameters, RawResult
+from .base import BaseHardwareAdapter
 
 AsyncConnectionFactory = Callable[[str, int, float], Awaitable[tuple[Any, Any]]]
 AsyncResultT = TypeVar("AsyncResultT")
@@ -102,7 +103,7 @@ class AsyncSerialConnectionState(Enum):
 
 
 @dataclass
-class AsyncSerialCommandHardware:
+class AsyncSerialCommandHardware(BaseHardwareAdapter):
     """Async serial command adapter using the same text protocol as sync mode."""
 
     port: str
@@ -119,6 +120,9 @@ class AsyncSerialCommandHardware:
     reconnect_backoff_s: float = 0.05
     connection_factory: AsyncConnectionFactory | None = None
 
+    adapter_id: str = "serial-command-hardware"
+    transport: str = "serial"
+
     def __post_init__(self) -> None:
         self._reader: Any | None = None
         self._writer: Any | None = None
@@ -129,6 +133,25 @@ class AsyncSerialCommandHardware:
     @property
     def connection_state(self) -> str:
         return self._state.value
+
+    def healthcheck(self) -> dict[str, Any]:
+        response = self._run_coroutine(self._healthcheck_async())
+        return {
+            "ok": bool(response),
+            "protocol": "legacy-text",
+            "response": response.decode("utf-8", errors="replace"),
+        }
+
+    def get_capabilities(self) -> list[str]:
+        return ["glitch.execute", "target.reset", "target.trigger"]
+
+    def reset_target(self) -> None:
+        if self.reset_command:
+            self._run_coroutine(self._write_control_line(self.reset_command))
+
+    def trigger_target(self) -> None:
+        if self.trigger_command:
+            self._run_coroutine(self._write_control_line(self.trigger_command))
 
     def connect(self) -> None:
         """Open persistent serial connection if not already connected."""
@@ -160,6 +183,18 @@ class AsyncSerialCommandHardware:
             reset_detected=reset_detected,
             error_code=error_code,
         )
+
+    async def _healthcheck_async(self) -> bytes:
+        await self._ensure_connection()
+        assert self._reader is not None and self._writer is not None
+        await self._write_line(self._writer, "HELLO")
+        raw = await asyncio.wait_for(self._reader.readline(), timeout=self.timeout)
+        return bytes(raw).strip()
+
+    async def _write_control_line(self, message: str) -> None:
+        await self._ensure_connection()
+        assert self._writer is not None
+        await self._write_line(self._writer, message)
 
     async def _execute_with_reconnect(self, params: GlitchParameters) -> bytes:
         max_attempts = max(1, int(self.reconnect_attempts) + 1)

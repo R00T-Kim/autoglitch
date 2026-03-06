@@ -58,8 +58,8 @@ def _validate_config_legacy(config: dict[str, Any]) -> list[str]:
 
     config_version = config.get("config_version", 1)
     parsed_version = _safe_int(config_version, label="config_version", errors=errors)
-    if parsed_version is not None and parsed_version not in {1, 2}:
-        errors.append(f"unsupported config_version: {config_version} (expected 1 or 2)")
+    if parsed_version is not None and parsed_version not in {1, 2, 3}:
+        errors.append(f"unsupported config_version: {config_version} (expected 1, 2 or 3)")
 
     required_top_keys = ["experiment", "optimizer", "glitch", "hardware"]
     for key in required_top_keys:

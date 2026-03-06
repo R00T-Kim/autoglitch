@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import argparse
 import json
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from .cli_support import (
     _build_preflight_safe_params,
+    _resolve_effective_hardware_mode,
     _resolve_preflight_output_path,
     _write_json_report,
 )
@@ -59,7 +61,7 @@ def run_hil_preflight_for_args(
 ) -> dict[str, Any] | None:
     config_payload = config or load_run_config(args)[0]
     hw_cfg = config_payload.get("hardware", {})
-    mode = str(args.hardware or hw_cfg.get("mode", "mock")).lower()
+    mode = _resolve_effective_hardware_mode(args, config=config_payload)
     if mode != "serial":
         return None
 

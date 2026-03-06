@@ -21,6 +21,7 @@ from .cli_commands import (
     validate_config_command,
 )
 from .cli_execution import execute_campaign, run_single_campaign
+from .cli_hardware import detect_hardware_command, doctor_hardware_command, setup_hardware_command
 from .cli_parser import _build_parser
 from .cli_preflight import hil_preflight_command, run_hil_preflight_for_args
 from .cli_runtime import _create_hardware, _create_mlflow_tracker, _create_optimizer
@@ -130,6 +131,18 @@ def main() -> None:
 
     if args.command == "kb-query":
         _kb_query_cmd(args)
+        return
+
+    if args.command == "detect-hardware":
+        _detect_hardware_cmd(args)
+        return
+
+    if args.command == "setup-hardware":
+        _setup_hardware_cmd(args)
+        return
+
+    if args.command == "doctor-hardware":
+        _doctor_hardware_cmd(args)
         return
 
     parser.print_help()
@@ -292,6 +305,30 @@ def _replay_run(args: argparse.Namespace) -> None:
 
 def _show_report(args: argparse.Namespace) -> None:
     show_report_command(args)
+
+
+def _detect_hardware_cmd(args: argparse.Namespace) -> None:
+    detect_hardware_command(
+        args,
+        load_run_config=_load_run_config,
+        validate_runtime_config=_validate_runtime_config,
+    )
+
+
+def _setup_hardware_cmd(args: argparse.Namespace) -> None:
+    setup_hardware_command(
+        args,
+        load_run_config=_load_run_config,
+        validate_runtime_config=_validate_runtime_config,
+    )
+
+
+def _doctor_hardware_cmd(args: argparse.Namespace) -> None:
+    doctor_hardware_command(
+        args,
+        load_run_config=_load_run_config,
+        validate_runtime_config=_validate_runtime_config,
+    )
 
 # ---------------------------------------------------------------------------
 # Validation / Plugin / Replay

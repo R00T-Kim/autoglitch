@@ -106,10 +106,11 @@ def _build_parser() -> argparse.ArgumentParser:
         default="auto",
     )
     benchmark.add_argument("--objective", choices=["single", "multi"], default="single")
-    benchmark.add_argument("--hardware", choices=["mock", "serial"], default=None)
+    benchmark.add_argument("--hardware", default=None, help="hardware adapter id or legacy mode override")
     benchmark.add_argument("--serial-port", default=None)
     benchmark.add_argument("--serial-timeout", type=float, default=None)
     benchmark.add_argument("--serial-io", choices=["sync", "async"], default=None)
+    benchmark.add_argument("--binding-file", default=None)
     benchmark.add_argument("--rl-backend", choices=["lite", "sb3"], default=None)
     benchmark.add_argument("--ai-mode", choices=["off", "advisor", "agentic_shadow", "agentic_enforced"], default=None)
     benchmark.add_argument("--policy-file", default=None, help="agentic policy yaml path")
@@ -128,10 +129,11 @@ def _build_parser() -> argparse.ArgumentParser:
     preflight.add_argument("--template", default=None, help="campaign template yaml path")
     preflight.add_argument("--target", default="stm32f3", help="target profile name")
     preflight.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
-    preflight.add_argument("--hardware", choices=["mock", "serial"], default=None)
+    preflight.add_argument("--hardware", default=None, help="hardware adapter id or legacy mode override")
     preflight.add_argument("--serial-port", default=None)
     preflight.add_argument("--serial-timeout", type=float, default=None)
     preflight.add_argument("--serial-io", choices=["sync", "async"], default=None)
+    preflight.add_argument("--binding-file", default=None)
     preflight.add_argument("--probe-trials", type=int, default=None)
     preflight.add_argument("--max-timeout-rate", type=float, default=None)
     preflight.add_argument("--max-reset-rate", type=float, default=None)
@@ -197,6 +199,16 @@ def _build_parser() -> argparse.ArgumentParser:
     kb_ingest.add_argument("--title", default=None, help="document title")
     kb_ingest.add_argument("--tags", default="", help="comma-separated tags")
 
+    detect_hw = sub.add_parser("detect-hardware", help="probe supported hardware adapters on this machine")
+    _add_hardware_management_arguments(detect_hw)
+
+    setup_hw = sub.add_parser("setup-hardware", help="auto-detect and persist a local hardware binding")
+    _add_hardware_management_arguments(setup_hw)
+    setup_hw.add_argument("--force", action="store_true", help="overwrite existing local binding file")
+
+    doctor_hw = sub.add_parser("doctor-hardware", help="diagnose hardware binding and detection health")
+    _add_hardware_management_arguments(doctor_hw)
+
     kb_query = sub.add_parser("kb-query", help="query local knowledge store")
     kb_query.add_argument("--store", default=None, help="override knowledge store jsonl path")
     kb_query.add_argument("--query", required=True, help="search query")
@@ -224,10 +236,11 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--objective", choices=["single", "multi"], default=None)
     parser.add_argument("--enable-llm", action="store_true", help="enable LLM advisor fallback")
     parser.add_argument("--target-primitive", default=None, help="stop early when primitive is reached")
-    parser.add_argument("--hardware", choices=["mock", "serial"], default=None)
+    parser.add_argument("--hardware", default=None, help="hardware adapter id or legacy mode override")
     parser.add_argument("--serial-port", default=None, help="override serial target port")
     parser.add_argument("--serial-timeout", type=float, default=None, help="override serial timeout")
     parser.add_argument("--serial-io", choices=["sync", "async"], default=None, help="serial IO mode override")
+    parser.add_argument("--binding-file", default=None, help="override local hardware binding file path")
     parser.add_argument(
         "--require-preflight",
         action="store_true",
@@ -248,3 +261,13 @@ def _add_run_arguments(parser: argparse.ArgumentParser) -> None:
         help="additional plugin manifest directory (repeatable)",
     )
     parser.add_argument("--run-tag", default=None, help="optional run tag for reproducibility tracking")
+
+
+def _add_hardware_management_arguments(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--config", default="configs/default.yaml", help="base config path")
+    parser.add_argument("--template", default=None, help="campaign template yaml path")
+    parser.add_argument("--target", default="stm32f3", help="target profile name")
+    parser.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    parser.add_argument("--hardware", default=None, help="preferred adapter id or legacy mode")
+    parser.add_argument("--serial-port", default=None, help="probe only the given serial port")
+    parser.add_argument("--binding-file", default=None, help="override local hardware binding file path")
