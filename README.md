@@ -26,7 +26,7 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - 비동기 serial 세션 재사용 + 재연결(`keep_open`, `reconnect_attempts`)
 - 리포트 스키마 v6: v5 + agentic decision trace/policy metrics
 
-## 최근 업데이트 (2026-03-06, Phase 4)
+## 최근 업데이트 (2026-03-06)
 - Async serial persistent/reconnect 상태머신 도입
 - 이미 실행 중인 event loop 안에서도 동작하는 async serial sync-wrapper 적용
 - BO heuristic 벡터화 평가 + 런타임 telemetry 추가
@@ -40,6 +40,7 @@ AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워
 - strict config `config_version: 2` + `recovery`/`ext_offset` schema/safety 검증 추가
 - run/queue/soak cleanup 및 serial 병렬 차단 로직 강화
 - CI는 broad smoke + upgraded subsystem incremental gates로 정렬
+- CLI는 facade/dispatch + parser/runtime/execution/batch/preflight/helper 계층으로 분리됨
 - 상세 내역: [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
 
 현재 소프트웨어 검증 상태(2026-03-06):
