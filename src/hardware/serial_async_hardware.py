@@ -2,17 +2,87 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+import queue
+import threading
 import time
+from collections.abc import Awaitable, Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Awaitable, Callable, Optional, Tuple
+from typing import Any, Generic, TypeVar, cast
 
 from ..types import GlitchParameters, RawResult
 
-AsyncConnectionFactory = Callable[[str, int, float], Awaitable[Tuple[Any, Any]]]
+AsyncConnectionFactory = Callable[[str, int, float], Awaitable[tuple[Any, Any]]]
+AsyncResultT = TypeVar("AsyncResultT")
 
 
-async def _default_open_connection(port: str, baudrate: int, timeout: float) -> Tuple[Any, Any]:
+class _SyncAsyncRunner(Generic[AsyncResultT]):
+    """Run async work on a dedicated background event loop."""
+
+    def __init__(self) -> None:
+        self._ready = threading.Event()
+        self._closed = False
+        self._jobs: queue.Queue[
+            tuple[Awaitable[AsyncResultT], concurrent.futures.Future[AsyncResultT]] | None
+        ] = queue.Queue()
+        self._thread = threading.Thread(
+            target=self._run_loop,
+            name="async-serial-hardware-loop",
+            daemon=True,
+        )
+        self._thread.start()
+        self._ready.wait()
+
+    def _run_loop(self) -> None:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        self._ready.set()
+        try:
+            while True:
+                job = self._jobs.get()
+                if job is None:
+                    break
+                coro, future = job
+                if future.cancelled():
+                    close = getattr(coro, "close", None)
+                    if callable(close):
+                        close()
+                    continue
+                try:
+                    result = loop.run_until_complete(coro)
+                except Exception as exc:
+                    future.set_exception(exc)
+                else:
+                    future.set_result(result)
+        finally:
+            pending = asyncio.all_tasks(loop)
+            for task in pending:
+                task.cancel()
+            if pending:
+                loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            loop.close()
+
+    def run(self, coro: Awaitable[AsyncResultT]) -> AsyncResultT:
+        if self._closed:
+            raise RuntimeError("async runner is closed")
+        future: concurrent.futures.Future[AsyncResultT] = concurrent.futures.Future()
+        self._jobs.put((coro, future))
+        try:
+            return future.result()
+        except concurrent.futures.CancelledError as exc:  # pragma: no cover - defensive
+            raise RuntimeError("async runner task was cancelled") from exc
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        self._jobs.put(None)
+        self._thread.join(timeout=1.0)
+
+
+async def _default_open_connection(port: str, baudrate: int, timeout: float) -> tuple[Any, Any]:
     try:
         import serial_asyncio
     except ModuleNotFoundError as exc:  # pragma: no cover - depends on runtime env
@@ -47,12 +117,14 @@ class AsyncSerialCommandHardware:
     keep_open: bool = True
     reconnect_attempts: int = 2
     reconnect_backoff_s: float = 0.05
-    connection_factory: Optional[AsyncConnectionFactory] = None
+    connection_factory: AsyncConnectionFactory | None = None
 
     def __post_init__(self) -> None:
         self._reader: Any | None = None
         self._writer: Any | None = None
         self._state = AsyncSerialConnectionState.DISCONNECTED
+        self._runner: _SyncAsyncRunner[Any] | None = None
+        self._runner_lock = threading.Lock()
 
     @property
     def connection_state(self) -> str:
@@ -64,11 +136,18 @@ class AsyncSerialCommandHardware:
 
     def disconnect(self) -> None:
         """Close serial connection and reset state."""
-        self._run_coroutine(self._disconnect_async())
+        try:
+            self._run_coroutine(self._disconnect_async())
+        finally:
+            self._close_runner()
 
     def execute(self, params: GlitchParameters) -> RawResult:
         start = time.perf_counter()
-        response = self._run_coroutine(self._execute_with_reconnect(params))
+        try:
+            response = self._run_coroutine(self._execute_with_reconnect(params))
+        finally:
+            if not self.keep_open and self._state == AsyncSerialConnectionState.DISCONNECTED:
+                self._close_runner()
         response_time = time.perf_counter() - start
 
         lowered = response.lower()
@@ -162,10 +241,8 @@ class AsyncSerialCommandHardware:
                 close()
             wait_closed = getattr(writer, "wait_closed", None)
             if callable(wait_closed):
-                try:
+                with suppress(Exception):  # pragma: no cover - defensive close
                     await wait_closed()
-                except Exception:  # pragma: no cover - defensive close
-                    pass
 
         self._state = AsyncSerialConnectionState.DISCONNECTED
 
@@ -179,14 +256,18 @@ class AsyncSerialCommandHardware:
         if callable(drain):
             await drain()
 
-    @staticmethod
-    def _run_coroutine(coro: Awaitable[bytes]) -> bytes:
-        try:
-            return asyncio.run(coro)
-        except RuntimeError:
-            # Fallback for environments with an already-running event loop.
-            loop = asyncio.new_event_loop()
-            try:
-                return loop.run_until_complete(coro)
-            finally:
-                loop.close()
+    def _runner_for_sync_calls(self) -> _SyncAsyncRunner[Any]:
+        with self._runner_lock:
+            if self._runner is None:
+                self._runner = _SyncAsyncRunner()
+            return self._runner
+
+    def _close_runner(self) -> None:
+        with self._runner_lock:
+            runner = self._runner
+            self._runner = None
+        if runner is not None:
+            runner.close()
+
+    def _run_coroutine(self, coro: Awaitable[AsyncResultT]) -> AsyncResultT:
+        return cast(AsyncResultT, self._runner_for_sync_calls().run(coro))

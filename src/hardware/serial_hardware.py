@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
-from typing import Callable, Optional
+from typing import Callable
 
 from ..types import GlitchParameters, RawResult
 
@@ -28,10 +28,10 @@ class SerialCommandHardware:
     )
     reset_command: str = ""
     trigger_command: str = ""
-    serial_factory: Optional[SerialFactory] = None
+    serial_factory: SerialFactory | None = None
 
     def __post_init__(self) -> None:
-        self._serial = None
+        self._serial: object | None = None
 
     def connect(self) -> None:
         if self._serial is not None:

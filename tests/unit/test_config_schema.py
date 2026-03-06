@@ -5,9 +5,9 @@ from pathlib import Path
 
 import yaml
 
+from src.cli import _load_config
 from src.config import validate_config
 from src.config.schema import parse_autoglitch_config
-from src.cli import _load_config
 
 
 def _merged_default() -> dict:
@@ -19,6 +19,7 @@ def test_strict_schema_accepts_default_merged_config() -> None:
     errors = validate_config(config, mode="strict")
     assert errors == []
     parsed = parse_autoglitch_config(config)
+    assert parsed.config_version == 2
     assert parsed.target.name == "STM32F303"
 
 
@@ -29,6 +30,15 @@ def test_strict_schema_rejects_string_numeric_values() -> None:
 
     errors = validate_config(config, mode="strict")
     assert any("experiment.seed" in item for item in errors)
+
+
+def test_strict_schema_requires_config_version_2() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["config_version"] = 1
+
+    errors = validate_config(config, mode="strict")
+    assert any("config_version" in item and "requires config_version: 2" in item for item in errors)
 
 
 def test_legacy_mode_keeps_backward_compatibility_for_numeric_strings() -> None:
@@ -43,6 +53,45 @@ def test_legacy_mode_keeps_backward_compatibility_for_numeric_strings() -> None:
 
     errors = validate_config(merged, mode="legacy")
     assert errors == []
+
+
+def test_legacy_mode_returns_errors_instead_of_raising_on_bad_version() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["config_version"] = "abc"
+
+    errors = validate_config(config, mode="legacy")
+    assert any(item == "config_version must be an integer" for item in errors)
+
+
+def test_legacy_mode_returns_friendly_errors_for_non_mapping_sections() -> None:
+    config = {
+        "config_version": 1,
+        "experiment": {},
+        "optimizer": "broken",
+        "glitch": [],
+        "hardware": {},
+    }
+
+    errors = validate_config(config, mode="legacy")
+    assert "optimizer must be a mapping" in errors
+    assert "glitch must be a mapping" in errors
+    assert "glitch.parameters must be a mapping" in errors
+
+
+def test_legacy_mode_validates_ext_offset_and_safety_ranges() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["config_version"] = 1
+    config["glitch"]["parameters"]["ext_offset"]["min"] = -1.0
+    config["safety"]["ext_offset_max"] = 2_000_000.0
+
+    errors = validate_config(config, mode="legacy")
+    assert "glitch.parameters.ext_offset.min must be >= 0" in errors
+    assert any(
+        "safety.ext_offset range must be within glitch.parameters.ext_offset range" in item
+        for item in errors
+    )
 
 
 def test_strict_schema_rejects_invalid_serial_preflight_threshold() -> None:
@@ -83,3 +132,40 @@ def test_strict_schema_accepts_agentic_config_defaults() -> None:
 
     errors = validate_config(config, mode="strict")
     assert errors == []
+
+
+def test_strict_schema_rejects_unknown_core_keys() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["experiment"]["surprise_toggle"] = True
+
+    errors = validate_config(config, mode="strict")
+    assert any("unknown keys not allowed" in item for item in errors)
+
+
+def test_strict_schema_allows_x_extension_keys() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["x_runtime"] = {"owner": "lab"}
+    config["experiment"]["x_hint"] = "safe"
+
+    errors = validate_config(config, mode="strict")
+    assert errors == []
+
+
+def test_strict_schema_rejects_invalid_recovery_retry() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["recovery"]["retry"]["max_attempts"] = 0
+
+    errors = validate_config(config, mode="strict")
+    assert any("max_attempts" in item for item in errors)
+
+
+def test_strict_schema_rejects_ext_offset_safety_outside_glitch_range() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["safety"]["ext_offset_max"] = 2_000_000.0
+
+    errors = validate_config(config, mode="strict")
+    assert any("ext_offset" in item for item in errors)

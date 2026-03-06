@@ -1,4 +1,5 @@
 """Strict configuration schema and validation helpers."""
+
 from __future__ import annotations
 
 from typing import Any, Dict, List, Literal, Optional, cast
@@ -10,6 +11,21 @@ class _BaseStrictModel(BaseModel):
     """Base model with strict typing while allowing forward-compatible keys."""
 
     model_config = ConfigDict(strict=True, extra="allow")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _reject_unknown_non_extension_keys(cls, payload: Any) -> Any:
+        if not isinstance(payload, dict):
+            return payload
+
+        known_fields = set(cls.model_fields.keys())
+        unknown = [
+            str(key) for key in payload if key not in known_fields and not str(key).startswith("x_")
+        ]
+        if unknown:
+            unknown_list = ", ".join(sorted(unknown))
+            raise ValueError(f"unknown keys not allowed (use x_* for extensions): {unknown_list}")
+        return payload
 
 
 class RangeSpec(_BaseStrictModel):
@@ -163,9 +179,16 @@ class HardwareSerialConfig(_BaseStrictModel):
         return self
 
 
+class HardwarePeripheralConfig(_BaseStrictModel):
+    type: str = "none"
+    port: str | None = None
+
+
 class HardwareConfig(_BaseStrictModel):
     mode: Literal["mock", "serial"] = "mock"
+    glitcher: HardwarePeripheralConfig = Field(default_factory=HardwarePeripheralConfig)
     target: HardwareTargetConfig = Field(default_factory=HardwareTargetConfig)
+    oscilloscope: HardwarePeripheralConfig = Field(default_factory=HardwarePeripheralConfig)
     serial_command_template: str = (
         "GLITCH width={width:.3f} offset={offset:.3f} "
         "voltage={voltage:.3f} repeat={repeat:d} ext_offset={ext_offset:.3f}"
@@ -180,6 +203,17 @@ class GlitchParametersConfig(_BaseStrictModel):
     offset: RangeSpec
     voltage: RangeSpec
     repeat: RangeSpec
+    ext_offset: RangeSpec = Field(
+        default_factory=lambda: RangeSpec(min=0.0, max=1_000_000.0, step=1.0)
+    )
+
+    @model_validator(mode="after")
+    def _validate_ext_offset_bounds(self) -> "GlitchParametersConfig":
+        if float(self.ext_offset.min) < 0:
+            raise ValueError("ext_offset.min must be >= 0")
+        if float(self.ext_offset.max) < 0:
+            raise ValueError("ext_offset.max must be >= 0")
+        return self
 
 
 class GlitchConfig(_BaseStrictModel):
@@ -194,6 +228,8 @@ class SafetyConfig(_BaseStrictModel):
     voltage_abs_max: float = 1.0
     repeat_min: int = 1
     repeat_max: int = 10
+    ext_offset_min: float = 0.0
+    ext_offset_max: float = 1_000_000.0
     min_cooldown_s: float = 0.0
     max_trials_per_minute: int | None = None
     auto_throttle: bool = True
@@ -206,8 +242,12 @@ class SafetyConfig(_BaseStrictModel):
             raise ValueError("offset_min must be <= offset_max")
         if self.repeat_min > self.repeat_max:
             raise ValueError("repeat_min must be <= repeat_max")
+        if self.ext_offset_min > self.ext_offset_max:
+            raise ValueError("ext_offset_min must be <= ext_offset_max")
         if self.voltage_abs_max <= 0:
             raise ValueError("voltage_abs_max must be > 0")
+        if self.ext_offset_min < 0:
+            raise ValueError("ext_offset_min must be >= 0")
         if self.min_cooldown_s < 0:
             raise ValueError("min_cooldown_s must be >= 0")
         if self.max_trials_per_minute is not None and self.max_trials_per_minute <= 0:
@@ -274,6 +314,50 @@ class PolicyConfig(_BaseStrictModel):
         return self
 
 
+class RecoveryRetryConfig(_BaseStrictModel):
+    max_attempts: int = 3
+    initial_backoff_s: float = 0.1
+    max_backoff_s: float = 1.0
+    backoff_multiplier: float = 2.0
+    jitter_s: float = 0.0
+
+    @model_validator(mode="after")
+    def _validate_retry(self) -> "RecoveryRetryConfig":
+        if self.max_attempts <= 0:
+            raise ValueError("max_attempts must be > 0")
+        if self.initial_backoff_s < 0:
+            raise ValueError("initial_backoff_s must be >= 0")
+        if self.max_backoff_s < 0:
+            raise ValueError("max_backoff_s must be >= 0")
+        if self.backoff_multiplier < 1.0:
+            raise ValueError("backoff_multiplier must be >= 1.0")
+        if self.jitter_s < 0:
+            raise ValueError("jitter_s must be >= 0")
+        if self.max_backoff_s < self.initial_backoff_s:
+            raise ValueError("max_backoff_s must be >= initial_backoff_s")
+        return self
+
+
+class RecoveryCircuitBreakerConfig(_BaseStrictModel):
+    failure_threshold: int = 5
+    recovery_timeout_s: float = 10.0
+
+    @model_validator(mode="after")
+    def _validate_breaker(self) -> "RecoveryCircuitBreakerConfig":
+        if self.failure_threshold <= 0:
+            raise ValueError("failure_threshold must be > 0")
+        if self.recovery_timeout_s < 0:
+            raise ValueError("recovery_timeout_s must be >= 0")
+        return self
+
+
+class RecoveryConfig(_BaseStrictModel):
+    retry: RecoveryRetryConfig = Field(default_factory=RecoveryRetryConfig)
+    circuit_breaker: RecoveryCircuitBreakerConfig = Field(
+        default_factory=RecoveryCircuitBreakerConfig
+    )
+
+
 class KnowledgeConfig(_BaseStrictModel):
     enabled: bool = False
     store_path: str = "data/knowledge/kb.jsonl"
@@ -290,10 +374,25 @@ class KnowledgeConfig(_BaseStrictModel):
 
 class TargetConfig(_BaseStrictModel):
     name: str
+    family: str | None = None
+    flash_size: str | None = None
+    ram_size: str | None = None
+    clock_freq: int | None = None
+    interface: str | None = None
+    baudrate: int | None = None
+    reset_delay: float | None = None
+    boot_delay: float | None = None
+    firmware: str | None = None
+
+
+class ClassifierConfig(_BaseStrictModel):
+    model: str = "rule_based"
+    fault_classes: List[str] = Field(default_factory=list)
 
 
 class AutoglitchConfig(_BaseStrictModel):
-    config_version: int = 1
+    config_version: int = 2
+    defaults: List[Any] = Field(default_factory=list)
     experiment: ExperimentConfig
     optimizer: OptimizerConfig
     glitch: GlitchConfig
@@ -305,22 +404,28 @@ class AutoglitchConfig(_BaseStrictModel):
     ai: AIConfig = Field(default_factory=AIConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
+    classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
+    recovery: RecoveryConfig = Field(default_factory=RecoveryConfig)
 
     @field_validator("config_version")
     @classmethod
     def _validate_version(cls, value: int) -> int:
-        if value != 1:
-            raise ValueError("unsupported config_version (expected 1)")
+        if value != 2:
+            raise ValueError("strict schema requires config_version: 2")
         return value
 
     @model_validator(mode="after")
     def _validate_parameter_relationships(self) -> "AutoglitchConfig":
         glitch = self.glitch.parameters
 
-        if self.safety.width_min < float(glitch.width.min) or self.safety.width_max > float(glitch.width.max):
+        if self.safety.width_min < float(glitch.width.min) or self.safety.width_max > float(
+            glitch.width.max
+        ):
             raise ValueError("safety.width range must be within glitch.parameters.width range")
 
-        if self.safety.offset_min < float(glitch.offset.min) or self.safety.offset_max > float(glitch.offset.max):
+        if self.safety.offset_min < float(glitch.offset.min) or self.safety.offset_max > float(
+            glitch.offset.max
+        ):
             raise ValueError("safety.offset range must be within glitch.parameters.offset range")
 
         repeat_min = int(glitch.repeat.min)
@@ -328,15 +433,27 @@ class AutoglitchConfig(_BaseStrictModel):
         if self.safety.repeat_min < repeat_min or self.safety.repeat_max > repeat_max:
             raise ValueError("safety.repeat range must be within glitch.parameters.repeat range")
 
+        ext_offset_min = float(glitch.ext_offset.min)
+        ext_offset_max = float(glitch.ext_offset.max)
+        if (
+            self.safety.ext_offset_min < ext_offset_min
+            or self.safety.ext_offset_max > ext_offset_max
+        ):
+            raise ValueError(
+                "safety.ext_offset range must be within glitch.parameters.ext_offset range"
+            )
+
         voltage_abs = max(abs(float(glitch.voltage.min)), abs(float(glitch.voltage.max)))
         if self.safety.voltage_abs_max > voltage_abs:
-            raise ValueError("safety.voltage_abs_max must be <= glitch.parameters.voltage abs range")
+            raise ValueError(
+                "safety.voltage_abs_max must be <= glitch.parameters.voltage abs range"
+            )
 
         return self
 
 
 def parse_autoglitch_config(config: Dict[str, Any]) -> AutoglitchConfig:
-    """Parse and return strongly-typed AUTOGTLICH configuration."""
+    """Parse and return strongly-typed AUTOGLITCH configuration."""
     return cast(AutoglitchConfig, AutoglitchConfig.model_validate(config))
 
 

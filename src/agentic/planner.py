@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict
+from typing import Any
 
 from ..types import ContextSnapshot, PlannerProposal
 
@@ -24,8 +24,8 @@ class AgenticPlanner:
         self.mode = mode
         self.max_actions_per_cycle = max(1, int(max_actions_per_cycle))
 
-    def propose(self, snapshot: ContextSnapshot, config: Dict[str, Any]) -> PlannerProposal:
-        changes: Dict[str, Any] = {}
+    def propose(self, snapshot: ContextSnapshot, config: dict[str, Any]) -> PlannerProposal:
+        changes: dict[str, Any] = {}
         rationale_parts: list[str] = []
 
         if snapshot.timeout_rate_window > 0.20:
@@ -53,7 +53,7 @@ class AgenticPlanner:
             changes["optimizer.bo.multi_objective_weights.exploration"] = 0.4
             rationale_parts.append("변화 필요 낮음 -> baseline 유지")
 
-        limited_changes: Dict[str, Any] = {}
+        limited_changes: dict[str, Any] = {}
         for idx, (key, value) in enumerate(changes.items()):
             if idx >= self.max_actions_per_cycle:
                 break
@@ -71,7 +71,7 @@ class AgenticPlanner:
         )
 
     @staticmethod
-    def _read_config(config: Dict[str, Any], dotted_path: str, default: float | int) -> float:
+    def _read_config(config: dict[str, Any], dotted_path: str, default: float | int) -> float:
         node: Any = config
         for part in dotted_path.split("."):
             if not isinstance(node, dict) or part not in node:
@@ -91,7 +91,7 @@ class AgenticPlanner:
         return float(max(0.05, min(0.98, signal)))
 
     @staticmethod
-    def _proposal_id(*, snapshot: ContextSnapshot, changes: Dict[str, Any]) -> str:
+    def _proposal_id(*, snapshot: ContextSnapshot, changes: dict[str, Any]) -> str:
         raw = {
             "trial_index": snapshot.trial_index,
             "changes": changes,

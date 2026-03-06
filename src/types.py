@@ -1,4 +1,5 @@
 """AUTOGLITCH 핵심 데이터 타입 정의"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
@@ -51,12 +52,15 @@ class GlitchParameters:
 
     @classmethod
     def from_array(cls, arr: np.ndarray) -> "GlitchParameters":
+        if len(arr) < 4:
+            raise ValueError("GlitchParameters.from_array requires at least 4 values")
+
         return cls(
             width=float(arr[0]),
             offset=float(arr[1]),
             voltage=float(arr[2]),
             repeat=int(arr[3]),
-            ext_offset=float(arr[4]),
+            ext_offset=float(arr[4]) if len(arr) >= 5 else 0.0,
         )
 
 
@@ -137,6 +141,9 @@ class PolicyVerdict:
     accepted: bool
     reasons: List[str] = field(default_factory=list)
     normalized_changes: Dict[str, Any] = field(default_factory=dict)
+    validation_stage: str = "policy"
+    effect_type_by_path: Dict[str, str] = field(default_factory=dict)
+    validation_status_by_path: Dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -148,6 +155,9 @@ class PlannerDecision:
     verdict: PolicyVerdict
     applied: bool
     applied_changes: Dict[str, Any] = field(default_factory=dict)
+    live_applied_changes: Dict[str, Any] = field(default_factory=dict)
+    deferred_changes: Dict[str, Any] = field(default_factory=dict)
+    apply_status_by_path: Dict[str, str] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
 
 
