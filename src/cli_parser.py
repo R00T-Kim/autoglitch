@@ -209,6 +209,48 @@ def _build_parser() -> argparse.ArgumentParser:
     doctor_hw = sub.add_parser("doctor-hardware", help="diagnose hardware binding and detection health")
     _add_hardware_management_arguments(doctor_hw)
 
+    hil_rc = sub.add_parser("validate-hil-rc", help="run release-candidate HIL validation workflow")
+    hil_rc.add_argument("--config", default="configs/default.yaml", help="base config path")
+    hil_rc.add_argument("--template", default=None, help="campaign template yaml path")
+    hil_rc.add_argument("--target", default="stm32f3", help="target profile name")
+    hil_rc.add_argument("--config-mode", choices=["strict", "legacy"], default="strict")
+    hil_rc.add_argument("--hardware", default=None, help="primary adapter override (default: serial-json-hardware)")
+    hil_rc.add_argument("--serial-port", default=None, help="explicit serial port for onboarding")
+    hil_rc.add_argument("--serial-timeout", type=float, default=None)
+    hil_rc.add_argument("--serial-io", choices=["sync", "async"], default=None)
+    hil_rc.add_argument("--binding-file", default=None, help="override local hardware binding file path")
+    hil_rc.add_argument("--plugin-dir", action="append", default=[], help="extra plugin manifest directory")
+    hil_rc.add_argument("--run-tag", default=None, help="optional run tag prefix for validation artifacts")
+    hil_rc.add_argument("--output", default=None, help="optional final validation report path")
+    hil_rc.add_argument("--force-setup", action="store_true", help="overwrite an existing mismatched binding")
+    hil_rc.add_argument("--skip-software-gate", action="store_true", help="skip pytest software gate (fails RC gate)")
+    hil_rc.add_argument("--warmup-trials", type=int, default=100)
+    hil_rc.add_argument("--warmup-seed", type=int, default=42)
+    hil_rc.add_argument("--stability-trials", type=int, default=300)
+    hil_rc.add_argument("--stability-seeds", default="101,202,303")
+    hil_rc.add_argument("--repro-trials", type=int, default=200)
+    hil_rc.add_argument("--repro-seeds", default="11,12,13,14,15")
+    hil_rc.add_argument("--preflight-probe-trials", type=int, default=50)
+    hil_rc.add_argument("--preflight-max-timeout-rate", type=float, default=0.03)
+    hil_rc.add_argument("--preflight-max-reset-rate", type=float, default=0.08)
+    hil_rc.add_argument("--preflight-max-p95-latency-s", type=float, default=0.40)
+    hil_rc.add_argument("--soak-duration-minutes", type=float, default=120.0)
+    hil_rc.add_argument("--soak-batch-trials", type=int, default=200)
+    hil_rc.add_argument("--soak-max-batches", type=int, default=20)
+    hil_rc.add_argument("--skip-soak", action="store_true", help="skip soak/resume drill (fails RC gate)")
+    hil_rc.add_argument("--legacy-smoke-trials", type=int, default=50)
+    hil_rc.add_argument("--skip-legacy-smoke", action="store_true", help="skip legacy smoke path (fails RC gate)")
+    hil_rc.add_argument(
+        "--manual-bridge-restart-ok",
+        action="store_true",
+        help="confirm the manual bridge/service restart drill has been completed successfully",
+    )
+    hil_rc.add_argument(
+        "--manual-link-drop-ok",
+        action="store_true",
+        help="confirm the manual serial disconnect/reconnect drill has been completed successfully",
+    )
+
     kb_query = sub.add_parser("kb-query", help="query local knowledge store")
     kb_query.add_argument("--store", default=None, help="override knowledge store jsonl path")
     kb_query.add_argument("--query", required=True, help="search query")

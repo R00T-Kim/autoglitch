@@ -37,6 +37,7 @@ from .cli_support import (
     compare_summary_to_report,
     summarize_trial_records,
 )
+from .cli_validation import validate_hil_rc_command
 from .orchestrator import ExperimentOrchestrator
 from .plugins import PluginRegistry
 from .types import ExploitPrimitiveType
@@ -145,6 +146,10 @@ def main() -> None:
         _doctor_hardware_cmd(args)
         return
 
+    if args.command == "validate-hil-rc":
+        _validate_hil_rc_cmd(args)
+        return
+
     parser.print_help()
 
 
@@ -237,6 +242,16 @@ def _run_hil_preflight_for_args(
 def _run_campaign(args: argparse.Namespace) -> None:
     output = _execute_campaign(args)
     print(json.dumps(output, indent=2, ensure_ascii=False))
+
+
+def _validate_hil_rc_cmd(args: argparse.Namespace) -> None:
+    validate_hil_rc_command(
+        args,
+        load_run_config=_load_run_config,
+        validate_runtime_config=_validate_runtime_config,
+        execute_campaign=_execute_campaign,
+        run_hil_preflight_for_args=_run_hil_preflight_for_args,
+    )
 
 
 # ---------------------------------------------------------------------------
