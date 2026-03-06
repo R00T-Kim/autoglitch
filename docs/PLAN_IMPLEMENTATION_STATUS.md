@@ -114,9 +114,9 @@
   - extracted HIL preflight helpers to `src/cli_preflight.py`
   - preserved `src.cli` compatibility so existing tests/imports continue to work via facade wrappers/re-exports
 - Structural impact:
-  - `src/cli.py` reduced from ~2514 lines to ~917 lines across the refactor passes
-  - command dispatch, core campaign execution, queue/soak orchestration, and HIL preflight remain in `src.cli`
-  - parser, runtime factories, RL/KB/report/validation command handlers, config merge, queue/soak helpers, replay/report helpers, runtime fingerprinting, and agentic campaign orchestration moved out
+  - `src/cli.py` reduced from ~2514 lines to ~312 lines across the refactor passes
+  - `src.cli` now acts primarily as a compatibility facade and command dispatcher
+  - parser, runtime factories, core campaign execution, queue/soak orchestration, HIL preflight, RL/KB/report/validation command handlers, config merge, replay/report helpers, runtime fingerprinting, and agentic campaign orchestration moved out
 - Validation:
   - CLI-focused regression suite passed after each extraction stage
   - targeted Ruff and targeted mypy for all extracted CLI modules passed
