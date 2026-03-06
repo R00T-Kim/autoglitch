@@ -67,9 +67,10 @@ def test_hil_preflight_command_skips_on_non_serial_hardware(capsys) -> None:
 
 
 def test_run_hil_preflight_with_serial_mock_bridge(tmp_path) -> None:
-    from src.tools.mock_glitch_bridge import MockGlitchBridge
     import threading
     import time
+
+    from src.tools.mock_glitch_bridge import MockGlitchBridge
 
     bridge = MockGlitchBridge(seed=42)
     try:
