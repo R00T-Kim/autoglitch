@@ -65,6 +65,10 @@ def test_execute_campaign_agentic_shadow_records_events(tmp_path) -> None:
     assert run["ai_mode"] == "agentic_shadow"
     assert run["agentic"]["mode"] == "agentic_shadow"
     assert len(run["agentic"]["events"]) >= 1
+    first_event = run["agentic"]["events"][0]
+    assert first_event["verdict"]["validation_stage"] in {"policy", "confidence_gate"}
+    assert isinstance(first_event["apply_status_by_path"], dict)
+    assert Path(run["agentic"]["trace_report"]).suffix == ".jsonl"
     assert Path(run["agentic"]["trace_report"]).exists()
 
 
@@ -90,6 +94,9 @@ def test_planner_step_command_outputs_policy_verdict(capsys) -> None:
     assert payload["ai_mode"] == "agentic_enforced"
     assert "proposal" in payload
     assert "policy_verdict" in payload
+    assert "validation_stage" in payload["policy_verdict"]
+    assert "effect_type_by_path" in payload["policy_verdict"]
+    assert "validation_status_by_path" in payload["policy_verdict"]
 
 
 def test_kb_ingest_and_query_roundtrip(tmp_path, capsys) -> None:
