@@ -44,60 +44,32 @@ python -m src.cli report
 - `pytest -q` → `93 passed, 2 skipped`
 - strict/legacy config regression, agentic trace, async serial running-loop regression 포함
 
-## mock serial 경로 검증
-장비 없이 serial 코드 경로를 먼저 검증하려면 mock bridge를 사용합니다.
+## mock serial / 실장비 실행
+장비 없이 serial 코드 경로를 먼저 검증하려면 mock bridge를 사용할 수 있고,
+실장비에서는 `hil-preflight` 후 실행하는 흐름을 권장합니다.
 
 ```bash
+# mock serial path
 python -m src.tools.mock_glitch_bridge --port-file /tmp/autoglitch_mock_bridge.port
 python -m src.cli run --hardware serial --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)" --trials 20
-```
 
-## 실장비 HIL 실행
-실장비에서는 preflight를 먼저 돌린 뒤 캠페인을 실행하는 흐름을 권장합니다.
-
-```bash
+# real HIL path
 python -m src.cli hil-preflight --target stm32f3 --hardware serial --serial-port /dev/ttyUSB0
-python -m src.cli run --template experiments/configs/soak_hil_stm32f3.yaml --hardware serial --serial-port /dev/ttyUSB0 --require-preflight
+python -m src.cli run --hardware serial --serial-port /dev/ttyUSB0 --require-preflight --trials 100
 ```
 
 > `serial` 타깃 병렬 실행은 기본 차단됩니다. 필요한 경우에만 `--allow-parallel-serial`을 명시하세요.
 
-## 운영 명령 한눈에 보기
+## 자주 쓰는 명령
 - `run`: 단일 캠페인 실행
 - `report`: 최근 캠페인 리포트 출력
-- `replay`: JSONL trial 로그 재집계/검증
 - `hil-preflight`: serial HIL 사전 안정성 점검
 - `soak`: 장시간 배치 실행 + 체크포인트/재개
 - `queue-run`: 다중 job 실행 (`priority`, `enabled`, 체크포인트/재개)
-- `benchmark`: 알고리즘 비교 (bayesian vs rl)
 - `train-rl`, `eval-rl`: RL 백엔드 학습/평가
-- `run-agentic`, `planner-step`: agentic planner/policy 루프 실행/검증
-- `eval-suite`: 재현성 스위트 실행
-- `kb-ingest`, `kb-query`: 로컬 지식 저장소 적재/조회
+- `run-agentic`: agentic planner/policy 루프 실행
 
-## 고급 워크플로우
-
-### RL train / eval
-```bash
-python -m src.cli train-rl --target stm32f3 --rl-backend sb3 --steps 5000 --run-tag rl_baseline
-python -m src.cli eval-rl --target stm32f3 --rl-backend sb3 --checkpoint experiments/results/rl_sb3_checkpoint_step_5000_train_final.json
-```
-
-### Agentic shadow / enforced
-```bash
-python -m src.cli run-agentic --template experiments/configs/repro_stm32f3.yaml --ai-mode agentic_shadow
-python -m src.cli run-agentic --template experiments/configs/repro_stm32f3.yaml --ai-mode agentic_enforced --policy-file configs/policy/default_policy.yaml
-python -m src.cli planner-step --target stm32f3 --ai-mode agentic_enforced --success-rate 0.05 --primitive-rate 0.01
-```
-
-### soak / queue 운영
-```bash
-python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20
-python -m src.cli soak --template experiments/configs/soak_hil_stm32f3.yaml --batch-trials 200 --max-batches 20 --resume
-
-python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --continue-on-error
-python -m src.cli queue-run --queue experiments/configs/queue_hil.yaml --resume
-```
+고급 운영 예시(`soak`, `queue-run`, RL, agentic, replay, benchmark)는 [`docs/RUNBOOK.md`](docs/RUNBOOK.md)를 참고하세요.
 
 ## 설정 버전 / 호환성
 - strict 모드는 **`config_version: 2`** 를 요구합니다.
