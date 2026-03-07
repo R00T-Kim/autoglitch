@@ -1,76 +1,132 @@
 # AUTOGLITCH
 
-[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#설치)
+[![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#installation)
 [![CI](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml)
 [![Semgrep](https://github.com/R00T-Kim/autoglitch/actions/workflows/semgrep.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/semgrep.yml)
 
-AUTOGLITCH는 fault injection 실험을 자동화하는 closed-loop 프레임워크입니다.
-BO/RL 기반 파라미터 탐색, 하드웨어 실행, 관측/분류, primitive 매핑, 재현성 리포트를 한 흐름으로 제공합니다.
+Software-first autonomous glitching framework for closed-loop fault-injection campaigns.
+AUTOGLITCH combines experiment orchestration, Bayesian/RL optimization, hardware execution,
+observation/classification, primitive mapping, and reproducibility reporting in one workflow.
 
-## 지금 달라진 점
-- strict config 기준선이 **`config_version: 3`** 으로 올라갔습니다.
-- 하드웨어 계층이 **transport-agnostic registry + profile + local binding** 구조로 바뀌었습니다.
-- `src.hardware.framework` 는 이제 **호환 facade** 이고, 내부 구현은 `_framework_models / _framework_adapters / _framework_resolution / _framework_capabilities / _framework_doctor / _framework_locks` 로 분리되었습니다.
-- 새 하드웨어 명령이 추가되었습니다:
-  - `detect-hardware`
-  - `setup-hardware`
-  - `doctor-hardware`
-- serial 경로는 2개를 지원합니다:
-  - **`autoglitch.v1` typed JSONL protocol** (`serial-json-hardware`)
-  - **legacy text protocol** (`serial-command-hardware`)
-- 로컬 장비 바인딩은 기본적으로 **`configs/local/hardware.yaml`** 에 저장됩니다.
-- RC급 실장비 검증 워크플로우는 **`validate-hil-rc`** 명령으로 자동화됩니다.
-- CLI leaf command는 **범용 / RL / agentic** 클러스터로 분리되어, `src.cli` 는 dispatch/facade 역할만 수행합니다.
-- campaign summary / run manifest / RL report / eval suite / knowledge query payload는 `src/types.py`의 명시 타입 계약으로 정리되었습니다.
+**Quick links:** [Highlights](#highlights) · [Quickstart](#quickstart) · [Hardware onboarding](#hardware-onboarding) · [Quality gates](#quality-gates) · [Documentation](#documentation)
 
-현재 소프트웨어 검증 상태(2026-03-07):
-- `python -m compileall src tests` → **green**
-- `ruff check src tests` → **green**
-- `mypy src` → **green**
-- `pytest -q` → **`113 passed, 3 skipped`**
-- full-repo CI 품질 게이트와 로컬 검증 명령이 동일합니다.
-- typed serial adapter / hardware detection / local binding / CLI hardware onboarding / RL report / eval-suite 경로 포함
+> [!IMPORTANT]
+> As of **March 7, 2026**, the software quality gates are green:
+> `python -m compileall src tests`, `ruff check src tests`, `mypy src`, `pytest -q`.
+> The real-hardware RC workflow exists, but **lab evidence is still pending**.
+>
+> Latest local validation snapshot:
+> - `ruff check src tests` ✅
+> - `mypy src` ✅
+> - `pytest -q` ✅ `113 passed, 3 skipped`
 
-## 설치
+> [!NOTE]
+> AUTOGLITCH is a **research-grade alpha**. It is already strong as a software framework and
+> mock/HIL-prep environment, but this repository does **not** yet claim field-proven HIL results.
+
+## Highlights
+
+- **Closed-loop campaign execution**: optimizer → hardware → observer → classifier → mapper → feedback.
+- **Multiple search strategies**: Bayesian optimization, RL path, benchmark comparison, queue/soak flows.
+- **Hardware-aware runtime**: transport-agnostic registry, official profiles, local binding store,
+  onboarding commands, health diagnostics, binding-level locks.
+- **Typed serial first**: preferred `autoglitch.v1` JSONL protocol via `serial-json-hardware`, with
+  legacy text bridge fallback via `serial-command-hardware`.
+- **Agentic control path**: planner/policy loop, eval-suite, local knowledge ingest/query utilities.
+- **Reproducibility artifacts**: campaign summary, run manifest, RL reports, eval-suite reports,
+  JSONL trial logs, decision traces.
+- **Software quality gates aligned with CI**: local commands and GitHub Actions enforce the same
+  repo-wide Ruff, mypy, and pytest checks.
+
+## What works today
+
+| Area | Status | Notes |
+| --- | --- | --- |
+| Core campaign loop | ✅ | `run`, `report`, replay, queue, soak, benchmark |
+| Config validation | ✅ | strict mode requires `config_version: 3`; legacy mode still supported |
+| Hardware onboarding | ✅ | `detect-hardware`, `setup-hardware`, `doctor-hardware` |
+| Serial transport | ✅ | typed `autoglitch.v1` preferred, legacy text fallback maintained |
+| RL workflow | ✅ | `train-rl`, `eval-rl`, SB3 facade + lite fallback |
+| Agentic workflow | ✅ | `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query` |
+| HIL preflight / RC workflow | ✅ | `hil-preflight`, `validate-hil-rc` software path is implemented |
+| Full software quality gate | ✅ | compileall + Ruff + mypy + pytest all green |
+| Real-hardware RC evidence | ⏳ | workflow exists, measurement artifacts still need to be attached |
+
+## Quickstart
+
+### Installation
+
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install -e ".[dev]"
 ```
 
-## 5분 시작
+Installed console scripts:
+- `autoglitch`
+- `autoglitch-mock-bridge`
+- `autoglitch-rpi-bridge`
+
+### 5-minute software smoke run
+
 ```bash
 python -m src.cli validate-config --target stm32f3
-python -m src.cli run --target stm32f3 --trials 100
+python -m src.cli run --target stm32f3 --trials 50
 python -m src.cli report
 ```
 
-## 지원 하드웨어 온보딩
-### 1) 감지
+This gives you:
+- strict config validation,
+- a mock-hardware campaign run,
+- a saved campaign report under `experiments/results/`.
+
+### Quick RL smoke path
+
+```bash
+python -m src.cli train-rl --target stm32f3 --rl-backend sb3 --steps 2000
+python -m src.cli eval-rl --target stm32f3 --rl-backend sb3
+```
+
+## Hardware onboarding
+
+### Recommended flow for a real device
+
 ```bash
 python -m src.cli detect-hardware --target stm32f3 --serial-port /dev/ttyUSB0
-```
-
-### 2) 로컬 바인딩 저장
-```bash
 python -m src.cli setup-hardware --target stm32f3 --serial-port /dev/ttyUSB0 --force
-```
-
-### 3) 상태 진단
-```bash
 python -m src.cli doctor-hardware --target stm32f3
-```
-
-### 4) preflight + 실행
-```bash
 python -m src.cli hil-preflight --target stm32f3
 python -m src.cli run --target stm32f3 --require-preflight --trials 100
 ```
 
-> `setup-hardware` 이후에는 `run/soak/queue-run/hil-preflight` 가 기본적으로 로컬 바인딩을 사용합니다.
+After `setup-hardware`, AUTOGLITCH stores the selected binding in:
+- `configs/local/hardware.yaml`
 
-## RC HIL 검증
+The runtime then resolves hardware in this order:
+1. explicit CLI override,
+2. saved local binding,
+3. auto-detect,
+4. legacy/mock fallback.
+
+### Device-free serial path (mock bridge)
+
+Terminal A:
+
+```bash
+python -m src.tools.mock_glitch_bridge --port-file /tmp/autoglitch_mock_bridge.port
+```
+
+Terminal B:
+
+```bash
+python -m src.cli detect-hardware --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)"
+python -m src.cli setup-hardware --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)" --force
+python -m src.cli run --target stm32f3 --trials 20
+```
+
+### RC HIL validation workflow
+
 ```bash
 python -m src.cli validate-hil-rc \
   --target stm32f3 \
@@ -79,49 +135,71 @@ python -m src.cli validate-hil-rc \
   --manual-link-drop-ok
 ```
 
-> `validate-hil-rc` 는 typed serial을 기준으로 preflight, warmup/stability/repro, soak/resume, queue/binding guard, legacy smoke까지 묶어 리포트를 남깁니다.  
-> bridge 재시작/링크 드롭 같은 수동 복구 드릴은 **실험자가 실제로 수행한 뒤 confirmation flag** 로 표시해야 최종 RC 판정을 내릴 수 있습니다.
+`validate-hil-rc` bundles:
+- typed onboarding,
+- preflight,
+- warmup/stability/repro runs,
+- soak/resume and queue/binding-guard drills,
+- legacy smoke,
+- manual recovery confirmations.
 
-## 장비 없이 serial 경로 확인
+For first lab use, read [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md) first.
+
+## CLI overview
+
+| Command group | Commands |
+| --- | --- |
+| Core execution | `run`, `report`, `replay`, `benchmark` |
+| Batch operation | `queue-run`, `soak` |
+| Validation / safety | `validate-config`, `hil-preflight`, `validate-hil-rc` |
+| Hardware | `detect-hardware`, `setup-hardware`, `doctor-hardware` |
+| RL | `train-rl`, `eval-rl` |
+| Agentic | `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query` |
+| Extensibility | `list-plugins` |
+
+Full CLI help:
+
 ```bash
-python -m src.tools.mock_glitch_bridge --port-file /tmp/autoglitch_mock_bridge.port
-python -m src.cli detect-hardware --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)"
-python -m src.cli setup-hardware --serial-port "$(cat /tmp/autoglitch_mock_bridge.port)" --force
-python -m src.cli run --target stm32f3 --trials 20
+python -m src.cli --help
 ```
 
-## 실장비 운영 기본 순서
-1. `validate-config`
-2. `detect-hardware`
-3. `setup-hardware`
-4. `doctor-hardware`
-5. `hil-preflight`
-6. `run` / `soak` / `queue-run`
-7. RC 최종 검증은 `validate-hil-rc`
+## How AUTOGLITCH works
 
-> 실장비 처음 투입할 때는 [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md) 를 같이 보세요.
+```text
+config/template
+   ↓
+optimizer (bayesian / rl)
+   ↓ suggest()
+hardware runtime (mock / typed serial / legacy serial)
+   ↓ execute()
+observer → classifier → mapper
+   ↓
+reward + primitive signal + runtime metadata
+   ↓
+logger / manifest / summary / replayable JSONL
+   ↓
+next suggestion or campaign termination
+```
 
-## 자주 쓰는 명령
-- `run`: 단일 캠페인 실행
-- `report`: 최근 캠페인 리포트 출력
-- `detect-hardware`: 지원 장비 감지
-- `setup-hardware`: 로컬 하드웨어 바인딩 생성/갱신
-- `doctor-hardware`: 로컬 바인딩/감지/헬스 진단
-- `hil-preflight`: serial HIL 사전 안정성 점검
-- `validate-hil-rc`: typed serial 기준 RC HIL 검증 + soak/guard/legacy smoke 리포트
-- `soak`: 장시간 배치 실행 + 체크포인트/재개
-- `queue-run`: 다중 job 실행
-- `train-rl`, `eval-rl`: RL 백엔드 학습/평가
-- `run-agentic`: planner/policy 루프 실행
+Key runtime layers:
+- `src/cli.py`: compatibility facade + dispatcher
+- `src/cli_commands*.py`: focused command handlers (general / RL / agentic)
+- `src/hardware/framework.py`: public facade for the refactored hardware framework
+- `src/hardware/_framework_*.py`: internal models, adapters, resolution, capability checks, doctor, locks
+- `src/orchestrator/`, `src/optimizer/`, `src/runtime/`, `src/safety/`: core execution pipeline
+- `src/logging_viz/`: trial log, campaign summary, run manifest, tracking helpers
 
-## 설정 버전 / 호환성
-- strict 모드는 **`config_version: 3`** 을 요구합니다.
-- `hardware.binding_file` 기본값은 `configs/local/hardware.yaml` 입니다.
-- 공식 프로파일은 `configs/hardware_profiles/*.yaml` 에 있습니다.
-- legacy validator는 `config_version: 1/2/3` 입력을 읽고 **에러 리스트 반환**을 목표로 합니다.
-- legacy serial text protocol은 계속 지원하지만, 신규 권장 경로는 typed serial(`autoglitch.v1`) 입니다.
+## Configuration and compatibility
 
-### 하드웨어 관련 주요 설정
+### Config baseline
+
+- strict mode requires **`config_version: 3`**
+- legacy mode still reads `config_version: 1/2/3` and returns friendly error lists
+- official hardware profiles live in `configs/hardware_profiles/*.yaml`
+- default local binding path is `configs/local/hardware.yaml`
+
+### Example hardware block
+
 ```yaml
 config_version: 3
 
@@ -149,9 +227,11 @@ hardware:
     reconnect_backoff_s: 0.05
 ```
 
-## typed serial protocol
-공식 serial bridge는 line-delimited JSON 기반 **`autoglitch.v1`** 프로토콜을 사용할 수 있습니다.
-최소 명령 세트:
+### Typed serial protocol
+
+Preferred protocol: **`autoglitch.v1`**
+
+Minimum command set:
 - `hello`
 - `capabilities`
 - `health`
@@ -159,29 +239,106 @@ hardware:
 - `reset`
 - `trigger`
 
-legacy bridge는 기존 `GLITCH width=... offset=...` 텍스트 프로토콜로 계속 동작합니다.
+Legacy text bridge is still supported for compatibility.
 
-## 병렬 실행 주의
-- serial 타깃 병렬 실행은 기본 차단됩니다.
-- 필요할 때만 `--allow-parallel-serial` 로 해제하세요.
-- 같은 로컬 바인딩/장비를 동시에 잡으려 하면 binding-level lock으로 fail-closed 됩니다.
-- 장시간 운영 전 `hil-preflight` 와 `--require-preflight` 조합을 권장합니다.
+## Output artifacts
 
-## 품질 확인
+AUTOGLITCH generates structured artifacts for replay and auditability:
+
+- trial log: `experiments/logs/<run_id>.jsonl`
+- campaign summary: `experiments/results/campaign_*_<run_id>.json`
+- run manifest: `experiments/results/manifest_<run_id>.json`
+- RL train report: `experiments/results/rl_train_*.json`
+- RL eval report: `experiments/results/rl_eval_*.json`
+- eval-suite report: `experiments/results/eval_suite_*.json`
+- preflight summary: `experiments/results/hil_preflight_*.json`
+- RC validation report: `experiments/results/hil_rc_validation_*.json`
+- agentic trace: `experiments/results/agentic_trace_*.jsonl`
+- knowledge store(default): `data/knowledge/kb.jsonl`
+
+These outputs are backed by typed payload contracts in `src/types.py`.
+
+## Quality gates
+
+Local development and CI use the same checks:
+
 ```bash
 python -m compileall src tests
 ruff check src tests
-python -m mypy src
+mypy src
 pytest -q
+python -m src.cli validate-config --target stm32f3
 ```
 
-## 문서
-- [`docs/RUNBOOK.md`](docs/RUNBOOK.md)
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
-- [`docs/SAFETY.md`](docs/SAFETY.md)
-- [`docs/PLUGIN_SDK.md`](docs/PLUGIN_SDK.md)
-- [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
-- [`docs/ROADMAP.md`](docs/ROADMAP.md)
-- [`docs/SOFTWARE_EVOLUTION_2026.md`](docs/SOFTWARE_EVOLUTION_2026.md)
-- [`docs/HIL_VALIDATION_REPORT_2026Q1.md`](docs/HIL_VALIDATION_REPORT_2026Q1.md)
-- [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md)
+Serial safety defaults:
+- parallel serial execution is blocked unless explicitly enabled,
+- binding-level locks fail closed,
+- `hil-preflight` + `--require-preflight` is the recommended HIL run path.
+
+## Repository layout
+
+```text
+src/
+├── cli.py
+├── cli_commands.py
+├── cli_commands_rl.py
+├── cli_commands_agentic.py
+├── orchestrator/
+├── optimizer/
+├── hardware/
+├── observer/
+├── classifier/
+├── mapper/
+├── llm_advisor/
+├── logging_viz/
+├── runtime/
+└── safety/
+```
+
+Additional project directories:
+- `configs/` — target, hardware profile, and policy configuration
+- `tests/` — unit and integration tests
+- `docs/` — architecture, runbook, safety, roadmap, validation notes
+- `experiments/` — generated reports, logs, queue/soak artifacts
+
+## Documentation
+
+| Document | Purpose |
+| --- | --- |
+| [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | operational command flow and artifact map |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | module boundaries and runtime design |
+| [`docs/SAFETY.md`](docs/SAFETY.md) | safety policy and fail-closed behavior |
+| [`docs/PLUGIN_SDK.md`](docs/PLUGIN_SDK.md) | plugin manifest and extension model |
+| [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md) | what has already been implemented |
+| [`docs/ROADMAP.md`](docs/ROADMAP.md) | next milestones and remaining research work |
+| [`docs/SOFTWARE_EVOLUTION_2026.md`](docs/SOFTWARE_EVOLUTION_2026.md) | software-upgrade rationale and next ROI items |
+| [`docs/HIL_VALIDATION_REPORT_2026Q1.md`](docs/HIL_VALIDATION_REPORT_2026Q1.md) | HIL RC workflow status and evidence tracker |
+| [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md) | first-lab-use checklist |
+
+## Development
+
+Useful local commands:
+
+```bash
+pytest tests/unit -q
+ruff format src tests
+python -m src.cli list-plugins
+python -m src.cli benchmark --help
+```
+
+If you change runtime behavior, add or update:
+- a regression test,
+- the relevant docs under `docs/`,
+- schema/report compatibility if artifact shape changes.
+
+## Contributing
+
+Contributions are welcome, but please keep changes aligned with the current repo standards:
+- Python 3.10+
+- explicit type hints on public interfaces
+- repo-wide Ruff + mypy + pytest green before review
+- mock hardware in unit tests; reserve device workflows for integration/manual validation
+
+## License
+
+MIT
