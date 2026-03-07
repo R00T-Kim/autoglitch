@@ -1,5 +1,7 @@
 # AUTOGLITCH
 
+[English](README.md) | [한국어](README.ko.md)
+
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue)](#installation)
 [![CI](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/ci.yml)
 [![CodeQL](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml/badge.svg)](https://github.com/R00T-Kim/autoglitch/actions/workflows/codeql.yml)
