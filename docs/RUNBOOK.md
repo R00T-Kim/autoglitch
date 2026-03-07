@@ -1,5 +1,21 @@
 # AUTOGLITCH Runbook
 
+## 0) 소프트웨어 품질 게이트
+릴리스 전/PR 전 검증은 아래 기준을 그대로 사용한다. GitHub CI도 동일한 명령을 사용한다.
+
+```bash
+python -m compileall src tests
+ruff check src tests
+mypy src
+pytest -q
+python -m src.cli validate-config --target stm32f3
+```
+
+현재 소프트웨어 기준선(2026-03-07):
+- `ruff check src tests` ✅
+- `mypy src` ✅
+- `pytest -q` ✅ (`113 passed, 3 skipped`)
+
 ## 1) 사전 검증
 ```bash
 python -m src.cli validate-config --config configs/default.yaml --target stm32f3
@@ -168,11 +184,17 @@ python -m src.cli replay \
 - Trial log: `experiments/logs/<run_id>.jsonl`
 - Campaign summary: `experiments/results/campaign_*_<run_id>.json`
 - Run manifest: `experiments/results/manifest_<run_id>.json`
+- RL train report: `experiments/results/rl_train_*.json`
+- RL eval report: `experiments/results/rl_eval_*.json`
+- Eval suite report: `experiments/results/eval_suite_*.json`
 - Queue summary: `experiments/results/queue_*.json`
 - Soak summary: `experiments/results/soak_*.json`
 - HIL preflight summary: `experiments/results/hil_preflight_*.json`
 - RC HIL validation summary: `experiments/results/hil_rc_validation_*.json`
 - Agentic trace: `experiments/results/agentic_trace_*.jsonl`
+- Knowledge store(default): `data/knowledge/kb.jsonl`
+
+`campaign summary / manifest / RL report / eval-suite / knowledge query` 출력은 `src/types.py`의 typed payload 계약에 맞춰 생성된다.
 
 ## 10) 권장 체크리스트
 1. `validate-config`

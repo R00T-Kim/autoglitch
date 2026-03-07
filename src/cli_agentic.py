@@ -91,7 +91,7 @@ def _run_campaign_agentic(
             apply_status_by_path = patch_meta.get("apply_status_by_path", {})
             applied = bool(applied_changes)
         elif verdict.accepted:
-            apply_status_by_path = {path: "shadow_only" for path in verdict.normalized_changes}
+            apply_status_by_path = dict.fromkeys(verdict.normalized_changes, "shadow_only")
 
         decision = PlannerDecision(
             trace_id=f"trace_{idx + 1}_{len(campaign.planner_events) + 1}",

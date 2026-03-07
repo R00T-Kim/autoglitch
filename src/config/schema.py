@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Literal, Optional, cast
+from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -34,7 +34,7 @@ class RangeSpec(_BaseStrictModel):
     step: float | int | None = None
 
     @model_validator(mode="after")
-    def _validate_bounds(self) -> "RangeSpec":
+    def _validate_bounds(self) -> RangeSpec:
         if float(self.min) > float(self.max):
             raise ValueError("min must be <= max")
         if self.step is not None and float(self.step) <= 0:
@@ -51,7 +51,7 @@ class ExperimentConfig(_BaseStrictModel):
     success_threshold: float = 0.3
 
     @model_validator(mode="after")
-    def _validate_positive_values(self) -> "ExperimentConfig":
+    def _validate_positive_values(self) -> ExperimentConfig:
         if self.max_trials <= 0:
             raise ValueError("max_trials must be > 0")
         if self.rerun_count <= 0:
@@ -66,7 +66,7 @@ class OptimizerBOConfig(_BaseStrictModel):
     acquisition: str = "ei"
     backend: Literal["auto", "heuristic", "botorch", "turbo", "qnehvi"] = "auto"
     objective_mode: Literal["single", "multi"] = "single"
-    multi_objective_weights: Dict[str, float] = Field(default_factory=dict)
+    multi_objective_weights: dict[str, float] = Field(default_factory=dict)
     candidate_pool_size: int = 192
     vectorized_heuristic: bool = True
 
@@ -78,7 +78,7 @@ class OptimizerBOConfig(_BaseStrictModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_multi_objective_weights(self) -> "OptimizerBOConfig":
+    def _validate_multi_objective_weights(self) -> OptimizerBOConfig:
         for key, value in self.multi_objective_weights.items():
             if not isinstance(key, str) or not key:
                 raise ValueError("multi_objective_weights keys must be non-empty strings")
@@ -102,7 +102,7 @@ class OptimizerRLConfig(_BaseStrictModel):
     checkpoint_dir: str = "experiments/results"
 
     @model_validator(mode="after")
-    def _validate_positive_values(self) -> "OptimizerRLConfig":
+    def _validate_positive_values(self) -> OptimizerRLConfig:
         if self.learning_rate <= 0:
             raise ValueError("learning_rate must be > 0")
         if self.total_timesteps <= 0:
@@ -128,12 +128,12 @@ class OptimizerConfig(_BaseStrictModel):
 
 class HardwareTargetConfig(_BaseStrictModel):
     type: str = "stm32f3"
-    port: Optional[str] = None
+    port: str | None = None
     baudrate: int = 115_200
     timeout: float = 1.0
 
     @model_validator(mode="after")
-    def _validate_target_values(self) -> "HardwareTargetConfig":
+    def _validate_target_values(self) -> HardwareTargetConfig:
         if self.baudrate <= 0:
             raise ValueError("baudrate must be > 0")
         if self.timeout <= 0:
@@ -149,7 +149,7 @@ class HardwareSerialPreflightConfig(_BaseStrictModel):
     max_p95_latency_s: float = 0.50
 
     @model_validator(mode="after")
-    def _validate_preflight(self) -> "HardwareSerialPreflightConfig":
+    def _validate_preflight(self) -> HardwareSerialPreflightConfig:
         if self.probe_trials <= 0:
             raise ValueError("probe_trials must be > 0")
         for value, name in (
@@ -171,7 +171,7 @@ class HardwareSerialConfig(_BaseStrictModel):
     preflight: HardwareSerialPreflightConfig = Field(default_factory=HardwareSerialPreflightConfig)
 
     @model_validator(mode="after")
-    def _validate_serial_runtime(self) -> "HardwareSerialConfig":
+    def _validate_serial_runtime(self) -> HardwareSerialConfig:
         if self.reconnect_attempts < 0:
             raise ValueError("reconnect_attempts must be >= 0")
         if self.reconnect_backoff_s < 0:
@@ -181,8 +181,8 @@ class HardwareSerialConfig(_BaseStrictModel):
 
 class HardwareDiscoveryConfig(_BaseStrictModel):
     enabled: bool = True
-    candidate_ports: List[str] = Field(default_factory=list)
-    port_globs: List[str] = Field(
+    candidate_ports: list[str] = Field(default_factory=list)
+    port_globs: list[str] = Field(
         default_factory=lambda: [
             "/dev/ttyUSB*",
             "/dev/ttyACM*",
@@ -195,7 +195,7 @@ class HardwareDiscoveryConfig(_BaseStrictModel):
     probe_timeout_s: float = 0.25
 
     @model_validator(mode="after")
-    def _validate_discovery(self) -> "HardwareDiscoveryConfig":
+    def _validate_discovery(self) -> HardwareDiscoveryConfig:
         if self.probe_timeout_s <= 0:
             raise ValueError("probe_timeout_s must be > 0")
         return self
@@ -214,8 +214,8 @@ class HardwareConfig(_BaseStrictModel):
     profile: str = "auto"
     auto_detect: bool = True
     binding_file: str = "configs/local/hardware.yaml"
-    profile_dirs: List[str] = Field(default_factory=list)
-    required_capabilities: List[str] = Field(default_factory=list)
+    profile_dirs: list[str] = Field(default_factory=list)
+    required_capabilities: list[str] = Field(default_factory=list)
     glitcher: HardwarePeripheralConfig = Field(default_factory=HardwarePeripheralConfig)
     target: HardwareTargetConfig = Field(default_factory=HardwareTargetConfig)
     oscilloscope: HardwarePeripheralConfig = Field(default_factory=HardwarePeripheralConfig)
@@ -229,7 +229,7 @@ class HardwareConfig(_BaseStrictModel):
     discovery: HardwareDiscoveryConfig = Field(default_factory=HardwareDiscoveryConfig)
 
     @model_validator(mode="after")
-    def _validate_hardware(self) -> "HardwareConfig":
+    def _validate_hardware(self) -> HardwareConfig:
         if not self.binding_file:
             raise ValueError("binding_file must not be empty")
         if self.transport == "virtual" and self.adapter in {"serial-command-hardware", "serial-json-hardware"}:
@@ -247,7 +247,7 @@ class GlitchParametersConfig(_BaseStrictModel):
     )
 
     @model_validator(mode="after")
-    def _validate_ext_offset_bounds(self) -> "GlitchParametersConfig":
+    def _validate_ext_offset_bounds(self) -> GlitchParametersConfig:
         if float(self.ext_offset.min) < 0:
             raise ValueError("ext_offset.min must be >= 0")
         if float(self.ext_offset.max) < 0:
@@ -274,7 +274,7 @@ class SafetyConfig(_BaseStrictModel):
     auto_throttle: bool = True
 
     @model_validator(mode="after")
-    def _validate_safety(self) -> "SafetyConfig":
+    def _validate_safety(self) -> SafetyConfig:
         if self.width_min > self.width_max:
             raise ValueError("width_min must be <= width_max")
         if self.offset_min > self.offset_max:
@@ -310,7 +310,7 @@ class LoggingConfig(_BaseStrictModel):
 
 
 class PluginsConfig(_BaseStrictModel):
-    manifest_dirs: List[str] = Field(default_factory=list)
+    manifest_dirs: list[str] = Field(default_factory=list)
 
 
 class AIConfig(_BaseStrictModel):
@@ -324,7 +324,7 @@ class AIConfig(_BaseStrictModel):
     fallback_on_policy_reject: bool = True
 
     @model_validator(mode="after")
-    def _validate_ai(self) -> "AIConfig":
+    def _validate_ai(self) -> AIConfig:
         if self.planner_interval_trials <= 0:
             raise ValueError("planner_interval_trials must be > 0")
         if self.max_patch_delta < 0:
@@ -337,15 +337,15 @@ class AIConfig(_BaseStrictModel):
 
 
 class PolicyConfig(_BaseStrictModel):
-    allowed_fields: List[str] = Field(default_factory=list)
-    hard_limits: Dict[str, Dict[str, float]] = Field(default_factory=dict)
-    rate_limits: Dict[str, float] = Field(default_factory=dict)
+    allowed_fields: list[str] = Field(default_factory=list)
+    hard_limits: dict[str, dict[str, float]] = Field(default_factory=dict)
+    rate_limits: dict[str, float] = Field(default_factory=dict)
     reject_on_unknown_field: bool = True
     max_patch_delta: float = 0.5
     max_actions_per_cycle: int = 3
 
     @model_validator(mode="after")
-    def _validate_policy(self) -> "PolicyConfig":
+    def _validate_policy(self) -> PolicyConfig:
         if self.max_patch_delta < 0:
             raise ValueError("max_patch_delta must be >= 0")
         if self.max_actions_per_cycle <= 0:
@@ -361,7 +361,7 @@ class RecoveryRetryConfig(_BaseStrictModel):
     jitter_s: float = 0.0
 
     @model_validator(mode="after")
-    def _validate_retry(self) -> "RecoveryRetryConfig":
+    def _validate_retry(self) -> RecoveryRetryConfig:
         if self.max_attempts <= 0:
             raise ValueError("max_attempts must be > 0")
         if self.initial_backoff_s < 0:
@@ -382,7 +382,7 @@ class RecoveryCircuitBreakerConfig(_BaseStrictModel):
     recovery_timeout_s: float = 10.0
 
     @model_validator(mode="after")
-    def _validate_breaker(self) -> "RecoveryCircuitBreakerConfig":
+    def _validate_breaker(self) -> RecoveryCircuitBreakerConfig:
         if self.failure_threshold <= 0:
             raise ValueError("failure_threshold must be > 0")
         if self.recovery_timeout_s < 0:
@@ -403,7 +403,7 @@ class KnowledgeConfig(_BaseStrictModel):
     retrieval_top_k: int = 5
 
     @model_validator(mode="after")
-    def _validate_knowledge(self) -> "KnowledgeConfig":
+    def _validate_knowledge(self) -> KnowledgeConfig:
         if self.retrieval_top_k <= 0:
             raise ValueError("retrieval_top_k must be > 0")
         if not self.store_path:
@@ -426,12 +426,12 @@ class TargetConfig(_BaseStrictModel):
 
 class ClassifierConfig(_BaseStrictModel):
     model: str = "rule_based"
-    fault_classes: List[str] = Field(default_factory=list)
+    fault_classes: list[str] = Field(default_factory=list)
 
 
 class AutoglitchConfig(_BaseStrictModel):
     config_version: int = 3
-    defaults: List[Any] = Field(default_factory=list)
+    defaults: list[Any] = Field(default_factory=list)
     experiment: ExperimentConfig
     optimizer: OptimizerConfig
     glitch: GlitchConfig
@@ -454,7 +454,7 @@ class AutoglitchConfig(_BaseStrictModel):
         return value
 
     @model_validator(mode="after")
-    def _validate_parameter_relationships(self) -> "AutoglitchConfig":
+    def _validate_parameter_relationships(self) -> AutoglitchConfig:
         glitch = self.glitch.parameters
 
         if self.safety.width_min < float(glitch.width.min) or self.safety.width_max > float(
@@ -491,17 +491,17 @@ class AutoglitchConfig(_BaseStrictModel):
         return self
 
 
-def parse_autoglitch_config(config: Dict[str, Any]) -> AutoglitchConfig:
+def parse_autoglitch_config(config: dict[str, Any]) -> AutoglitchConfig:
     """Parse and return strongly-typed AUTOGLITCH configuration."""
     return cast(AutoglitchConfig, AutoglitchConfig.model_validate(config))
 
 
-def validate_autoglitch_config(config: Dict[str, Any]) -> List[str]:
+def validate_autoglitch_config(config: dict[str, Any]) -> list[str]:
     """Validate config and return user-friendly error messages."""
     try:
         parse_autoglitch_config(config)
     except ValidationError as exc:
-        errors: List[str] = []
+        errors: list[str] = []
         for item in exc.errors():
             loc = ".".join(str(part) for part in item.get("loc", []))
             msg = item.get("msg", "invalid value")

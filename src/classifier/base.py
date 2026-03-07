@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import Dict, Iterable, List
+from collections.abc import Iterable
 
 from ..types import FaultClass, Observation
 
@@ -15,7 +15,7 @@ class BaseClassifier(ABC):
         """단일 관측 분류"""
         ...
 
-    def classify_batch(self, observations: List[Observation]) -> List[FaultClass]:
+    def classify_batch(self, observations: list[Observation]) -> list[FaultClass]:
         """배치 분류 (기본 구현: 순차)"""
         return [self.classify(obs) for obs in observations]
 
@@ -28,7 +28,7 @@ class BaseClassifier(ABC):
 class RuleBasedClassifier(BaseClassifier):
     """규칙 기반 결함 분류기"""
 
-    DEFAULT_RULES: Dict[FaultClass, List[str]] = {
+    DEFAULT_RULES: dict[FaultClass, list[str]] = {
         FaultClass.AUTH_BYPASS: [
             "auth bypass",
             "bypass success",
@@ -51,7 +51,7 @@ class RuleBasedClassifier(BaseClassifier):
         ],
     }
 
-    def __init__(self, rules: Dict[FaultClass, List[str]] | None = None):
+    def __init__(self, rules: dict[FaultClass, list[str]] | None = None):
         self.rules = rules or self.DEFAULT_RULES
         self._last_confidence = 0.0
 

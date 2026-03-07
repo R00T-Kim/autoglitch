@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-from typing import Any, Dict
+from typing import Any
 
 from .cli_batch import queue_run, soak_run
 from .cli_commands import (
@@ -162,7 +162,7 @@ def main() -> None:
 # Core campaign execution
 # ---------------------------------------------------------------------------
 
-def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
+def _execute_campaign(args: argparse.Namespace) -> dict[str, Any]:
     return execute_campaign(
         args,
         load_run_config=_load_run_config,
@@ -173,14 +173,14 @@ def _execute_campaign(args: argparse.Namespace) -> Dict[str, Any]:
 
 
 def _run_single_campaign(
-    run_config: Dict[str, Any],
+    run_config: dict[str, Any],
     args: argparse.Namespace,
     run_seed: int,
     run_id: str,
     trials: int,
     target_primitive: ExploitPrimitiveType | None,
     plugin_registry: PluginRegistry,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return run_single_campaign(
         run_config=run_config,
         args=args,
@@ -227,9 +227,9 @@ def _hil_preflight_cmd(args: argparse.Namespace) -> None:
 def _run_hil_preflight_for_args(
     args: argparse.Namespace,
     *,
-    config: Dict[str, Any] | None = None,
+    config: dict[str, Any] | None = None,
     force: bool = False,
-) -> Dict[str, Any] | None:
+) -> dict[str, Any] | None:
     return run_hil_preflight_for_args(
         args,
         config=config,

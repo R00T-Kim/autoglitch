@@ -4,8 +4,9 @@ from __future__ import annotations
 import argparse
 import copy
 import logging
+from collections.abc import Callable
 from datetime import datetime
-from typing import Any, Callable
+from typing import Any
 
 from .classifier import RuleBasedClassifier
 from .cli_agentic import _run_campaign_agentic

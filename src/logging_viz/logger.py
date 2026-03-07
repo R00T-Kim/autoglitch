@@ -3,14 +3,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any, cast
 
 import numpy as np
 
-from ..types import CampaignResult, TrialResult
+from ..types import CampaignResult, CampaignSummaryPayload, RunManifestPayload, TrialResult
 
 
 class ExperimentLogger:
@@ -31,8 +32,8 @@ class ExperimentLogger:
         self,
         campaign: CampaignResult,
         output_dir: str = "experiments/results",
-        mlflow_info: Dict[str, Any] | None = None,
-        optimizer_info: Dict[str, Any] | None = None,
+        mlflow_info: dict[str, Any] | None = None,
+        optimizer_info: dict[str, Any] | None = None,
     ) -> Path:
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -43,7 +44,7 @@ class ExperimentLogger:
         bo_cfg = optimizer_cfg.get("bo", {}) if isinstance(optimizer_cfg, dict) else {}
         ai_cfg = campaign.config.get("ai", {}) if isinstance(campaign.config, dict) else {}
         run_tag = campaign.config.get("run_tag") or campaign.config.get("logging", {}).get("run_tag")
-        payload: Dict[str, Any] = {
+        payload: CampaignSummaryPayload = {
             "schema_version": 6,
             "campaign_id": campaign.campaign_id,
             "run_id": self.run_id,
@@ -105,9 +106,9 @@ class ExperimentLogger:
 
     def write_run_manifest(
         self,
-        config: Dict[str, Any],
+        config: dict[str, Any],
         output_dir: str = "experiments/results",
-        plugin_snapshot: Iterable[Dict[str, Any]] | None = None,
+        plugin_snapshot: Iterable[dict[str, Any]] | None = None,
     ) -> Path:
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -115,7 +116,7 @@ class ExperimentLogger:
         config_json = json.dumps(_to_jsonable(config), sort_keys=True, ensure_ascii=False)
         config_hash = hashlib.sha256(config_json.encode("utf-8")).hexdigest()
 
-        payload: Dict[str, Any] = {
+        payload: RunManifestPayload = {
             "schema_version": 1,
             "created_at": datetime.now().isoformat(),
             "run_id": self.run_id,
@@ -136,8 +137,8 @@ class ExperimentLogger:
 
 
 def _to_jsonable(value: Any) -> Any:
-    if is_dataclass(value):
-        return _to_jsonable(asdict(value))
+    if is_dataclass(value) and not isinstance(value, type):
+        return _to_jsonable(asdict(cast(Any, value)))
 
     if isinstance(value, dict):
         return {str(k): _to_jsonable(v) for k, v in value.items()}

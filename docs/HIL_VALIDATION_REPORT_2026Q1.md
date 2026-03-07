@@ -1,7 +1,7 @@
 # HIL Validation Report 2026 Q1
 
-> 상태(2026-03-06): **실측 데이터 대기 중**. 아래 템플릿은 유지하되, 현재 확보된 근거는 software-only validation뿐이다.
-> software gate(2026-03-06): `pytest -q` → `111 passed, 3 skipped`
+> 상태(2026-03-07): **실측 데이터 대기 중**. 아래 템플릿은 유지하되, 현재 확보된 근거는 software-only validation뿐이다.
+> software gate(2026-03-07): `python -m compileall src tests`, `ruff check src tests`, `mypy src`, `pytest -q` → `113 passed, 3 skipped`
 
 ## 1) 목적
 STM32F3/ESP32 타깃에서 AUTOGLITCH의 serial HIL 실행 안정성과 재현성 KPI를 검증한다.

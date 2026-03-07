@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from collections import Counter
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from ..types import TrialResult
 
@@ -20,7 +20,7 @@ class LLMAdvisor:
     def __init__(
         self,
         model: str = "claude-sonnet-4-20250514",
-        api_key: Optional[str] = None,
+        api_key: str | None = None,
     ):
         self.model = model
         self.api_key = api_key
@@ -28,9 +28,9 @@ class LLMAdvisor:
 
     def suggest_search_strategy(
         self,
-        target_info: Optional[Dict] = None,
-        history: Optional[List[TrialResult]] = None,
-    ) -> Dict[str, Any]:
+        target_info: dict | None = None,
+        history: list[TrialResult] | None = None,
+    ) -> dict[str, Any]:
         """탐색 전략 제안.
 
         Returns:
@@ -63,7 +63,7 @@ class LLMAdvisor:
             "rationale": rationale,
         }
 
-    def generate_hypothesis(self, recent_trials: List[TrialResult]) -> str:
+    def generate_hypothesis(self, recent_trials: list[TrialResult]) -> str:
         """최근 시도 결과를 기반으로 가설 생성"""
         if not recent_trials:
             return "최근 데이터가 없어 초기 랜덤 탐색 비중을 유지해야 합니다."
@@ -79,7 +79,7 @@ class LLMAdvisor:
             f"{dominant_primitive} 강화 가능성이 있어 width/offset 인근 영역 집중 탐색을 권장합니다."
         )
 
-    def interpret_results(self, campaign_results: Dict[str, Any]) -> str:
+    def interpret_results(self, campaign_results: dict[str, Any]) -> str:
         """캠페인 결과 해석"""
         n_trials = campaign_results.get("n_trials", 0)
         success_rate = campaign_results.get("success_rate", 0.0)
@@ -91,7 +91,7 @@ class LLMAdvisor:
             "재현률이 낮으면 최고 성능 구간 주변의 탐색 폭을 줄이세요."
         )
 
-    def suggest_priors(self, target_info: Dict) -> Dict[str, Any]:
+    def suggest_priors(self, target_info: dict) -> dict[str, Any]:
         """타깃 정보 기반 BO prior 분포 제안"""
         family = str(target_info.get("family", "generic")).lower()
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import fields
-from typing import Any, Dict, Optional
+from typing import Any
 
 import numpy as np
 
@@ -19,7 +19,7 @@ class GlitchEnv:
     실제 장비 대신 action<->parameter 변환과 상태 벡터 갱신 역할을 담당한다.
     """
 
-    def __init__(self, param_space: Dict[str, Any], seed: int = 42):
+    def __init__(self, param_space: dict[str, Any], seed: int = 42):
         self.param_space = param_space
         self._rng = np.random.default_rng(seed)
         self._step_count = 0
@@ -35,7 +35,7 @@ class GlitchEnv:
         return self._rng.uniform(-1.0, 1.0, size=len(self._param_fields))
 
     def action_to_params(self, action: np.ndarray) -> GlitchParameters:
-        values: Dict[str, Any] = {}
+        values: dict[str, Any] = {}
 
         for idx, name in enumerate(self._param_fields):
             spec = self.param_space.get(name)
@@ -79,7 +79,7 @@ class RLOptimizer(BaseOptimizer):
 
     def __init__(
         self,
-        param_space: Dict[str, Any],
+        param_space: dict[str, Any],
         seed: int = 42,
         algorithm: str = "ppo",
         learning_rate: float = 3e-4,
@@ -87,10 +87,10 @@ class RLOptimizer(BaseOptimizer):
         super().__init__(param_space, seed)
         self.algorithm = algorithm
         self.learning_rate = learning_rate
-        self._agent = None
-        self._env: Optional[GlitchEnv] = None
+        self._agent: dict[str, Any] | None = None
+        self._env: GlitchEnv | None = None
         self._rng = np.random.default_rng(seed)
-        self._policy_mean: Optional[np.ndarray] = None
+        self._policy_mean: np.ndarray | None = None
 
     def suggest(self) -> GlitchParameters:
         """RL 정책(경험 기반 평균 + 탐험 잡음)으로 파라미터 제안"""

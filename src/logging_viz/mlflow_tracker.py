@@ -2,9 +2,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Mapping, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,8 +43,8 @@ class MLflowTracker:
         self,
         *,
         run_name: str,
-        tags: Optional[Mapping[str, str]] = None,
-        params: Optional[Mapping[str, Any]] = None,
+        tags: Mapping[str, str] | None = None,
+        params: Mapping[str, Any] | None = None,
         nested: bool = False,
     ) -> None:
         if not self.enabled or self._mlflow is None:
@@ -77,7 +78,7 @@ class MLflowTracker:
         self._mlflow.end_run(status=status)
         self._active = False
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return {
             "enabled": self.enabled,
             "tracking_uri": self.tracking_uri,

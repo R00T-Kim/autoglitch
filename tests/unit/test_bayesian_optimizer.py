@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from src.optimizer import BayesianOptimizer
 
-
 PARAM_SPACE = {
     "width": {"min": 0.0, "max": 50.0, "step": 0.1},
     "offset": {"min": 0.0, "max": 50.0, "step": 0.1},

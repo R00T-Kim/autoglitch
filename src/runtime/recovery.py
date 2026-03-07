@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import random
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, Optional, TypeVar
+from typing import Any, TypeVar
 
 T = TypeVar("T")
 
@@ -28,7 +29,7 @@ class CircuitBreaker:
     recovery_timeout_s: float = 10.0
     state: str = "closed"
     failure_count: int = 0
-    opened_at: Optional[float] = None
+    opened_at: float | None = None
     last_error: str = ""
 
     def before_call(self) -> None:
@@ -59,7 +60,7 @@ class CircuitBreaker:
             self.state = "open"
             self.opened_at = time.monotonic()
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return {
             "state": self.state,
             "failure_count": self.failure_count,
@@ -75,7 +76,7 @@ class RecoveryExecutor:
     breaker: CircuitBreaker = field(default_factory=CircuitBreaker)
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "RecoveryExecutor":
+    def from_config(cls, config: dict[str, Any]) -> RecoveryExecutor:
         recovery_cfg = config.get("recovery", {})
         retry_cfg = recovery_cfg.get("retry", {})
         circuit_cfg = recovery_cfg.get("circuit_breaker", {})
@@ -94,8 +95,8 @@ class RecoveryExecutor:
         )
         return cls(retry=retry, breaker=breaker)
 
-    def execute(self, fn: Callable[[], T]) -> tuple[T, Dict[str, Any]]:
-        meta: Dict[str, Any] = {
+    def execute(self, fn: Callable[[], T]) -> tuple[T, dict[str, Any]]:
+        meta: dict[str, Any] = {
             "attempts": 0,
             "recovered": False,
             "circuit_state_before": self.breaker.state,

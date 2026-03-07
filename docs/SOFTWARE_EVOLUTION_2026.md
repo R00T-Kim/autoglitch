@@ -2,7 +2,7 @@
 
 외부 레퍼런스(공식 문서/공식 레포) 기반으로, 현재 코드베이스에서 **실제 효과가 큰 소프트웨어 개선 항목**을 우선순위로 정리했다.
 
-## 적용 현황 스냅샷 (2026-03-06)
+## 적용 현황 스냅샷 (2026-03-07)
 - ✅ Pydantic strict config 계층 적용
 - ✅ strict mode `config_version: 3` 고정 + `recovery`/`ext_offset` + hardware binding/discovery schema 확장
 - ✅ Serial async bridge + persistent/reconnect 적용
@@ -19,27 +19,27 @@
 - ✅ CodeQL/Semgrep 워크플로우 + incremental CI gate hardening 적용
 - ✅ 하드웨어 프레임워크 v1(registry/profile/local binding + detect/setup/doctor) 적용
 - ✅ typed serial protocol `autoglitch.v1` + legacy serial fallback 적용
+- ✅ full-repo quality gate green(`compileall`, `ruff`, `mypy`, `pytest`)
+- ✅ CLI leaf handler split(`cli_commands`, `cli_commands_rl`, `cli_commands_agentic`) 적용
+- ✅ hardware framework internal split + compatibility facade 적용
+- ✅ typed payload contracts(campaign/manifest/RL/eval-suite/knowledge) 적용
 - ⏳ botorch-native TuRBO/qNEHVI 정교화는 다음 단계
 
-## 1) 지금 바로 적용 가능한 Quick Wins
+## 1) 이미 회수한 Quick Wins
 
 ### A. CI 보안/신뢰성 강화
-- GitHub 공식 보안 가이드 기준으로:
-  - 액션을 태그(`@v5`) 대신 **full SHA pinning**으로 고정
-  - `.github/workflows/*` 변경에 `CODEOWNERS` 리뷰 강제
-  - `GITHUB_TOKEN` 최소 권한 유지
-- 이미 Dependabot 설정은 추가됨(`.github/dependabot.yml`).
+- GitHub Actions는 full SHA pinning과 분리된 CI/CodeQL/Semgrep 파이프라인 기준으로 정리되었다.
+- 품질 게이트는 repo 전체 `ruff check src tests` + `mypy src` + `pytest -q` 기준으로 승격되었다.
 
 ### B. 테스트 실행시간 단축
-- `pytest-xdist`(`pytest -n auto`) 도입으로 unit test wall-time 단축 가능.
-- 현재 테스트 수(2026-03-06 기준 `111 passed, 3 skipped`) 기준으로 CI 체감 개선이 큼.
+- `pytest-xdist`(`pytest -n auto`) 도입은 여전히 유효하다.
+- 현재 테스트 수(2026-03-07 기준 `113 passed, 3 skipped`) 기준으로 CI 체감 개선 여지가 있다.
 
 ### C. 설정 검증 강도 상향
-- 현재 validator + safety 체크는 있음.
-- 여기에 Pydantic strict 모드(`ConfigDict(strict=True)` 등) 추가하면
-  YAML 타입 강제(문자열→정수 자동 coercion 방지)가 쉬워짐.
+- strict config / typed payload 기반선은 이미 들어갔다.
+- 다음 단계는 optimizer telemetry / doctor / preflight payload에도 동일한 schema-version discipline을 더 넓게 적용하는 것이다.
 
-## 2) 중기 개선 (실험 성능/재현성)
+## 2) 다음 소프트웨어 우선순위 (실험 성능/재현성)
 
 ### D. BO 고도화 (Botorch 권장 경로)
 - 고차원/국소 최적화 문제에 TuRBO 계열 추가.
@@ -73,12 +73,11 @@
 ---
 
 ## 제안 실행 순서 (추천)
-1. **CI 보안 하드닝 + xdist 도입**
-2. **Pydantic strict config layer 추가**
-3. **RL callbacks + 벡터 환경**
-4. **TuRBO/qNEHVI 실험 브랜치**
-5. **MLflow nested/data lineage 정식화**
-6. **Serial async bridge 파일럿**
+1. **RL callbacks + 벡터 환경**
+2. **TuRBO/qNEHVI 실험 브랜치**
+3. **MLflow nested/data lineage 정식화**
+4. **pytest-xdist + property-based test 확대**
+5. **실장비 RC evidence 수집 자동화 보조**
 
 ---
 

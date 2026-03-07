@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from datetime import datetime, timedelta
 
+import numpy as np
 import pytest
 
 from src.logging_viz import ExperimentLogger
@@ -140,3 +141,23 @@ def test_campaign_summary_schema_v6_contains_agentic_fields(tmp_path) -> None:
     assert payload["agentic"]["mode"] == "agentic_shadow"
     assert payload["agentic"]["policy_reject_count"] == 1
     assert payload["decision_trace"]
+
+
+def test_log_trial_serializes_dataclass_payload_to_jsonl(tmp_path) -> None:
+    logger = ExperimentLogger(output_dir=str(tmp_path), run_id="jsonl_test")
+    trial = _trial(
+        trial_id=7,
+        response_time=0.05,
+        fault_class=FaultClass.AUTH_BYPASS,
+        primitive_type=ExploitPrimitiveType.CODE_EXECUTION,
+        confidence=0.95,
+        timestamp=datetime(2026, 3, 6, 12, 0, 0),
+    )
+    trial.observation.features = np.array([1.0, 2.0, 3.0], dtype=float)
+
+    logger.log_trial(trial)
+
+    payload = json.loads(logger.log_path.read_text(encoding="utf-8").strip())
+    assert payload["trial_id"] == 7
+    assert payload["observation"]["raw"]["serial_output"] == "ok"
+    assert payload["observation"]["features"] == [1.0, 2.0, 3.0]

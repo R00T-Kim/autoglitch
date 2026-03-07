@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import MISSING, fields
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import numpy as np
 
@@ -40,13 +40,13 @@ class BayesianOptimizer(BaseOptimizer):
 
     def __init__(
         self,
-        param_space: Dict[str, Any],
+        param_space: dict[str, Any],
         seed: int = 42,
         n_initial: int = 50,
         acquisition: str = "ei",
         backend: str = "auto",
         objective_mode: str = "single",
-        multi_objective_weights: Dict[str, float] | None = None,
+        multi_objective_weights: dict[str, float] | None = None,
         candidate_pool_size: int = 192,
         vectorized_heuristic: bool = True,
     ):
@@ -61,7 +61,7 @@ class BayesianOptimizer(BaseOptimizer):
         self.candidate_pool_size = max(1, int(candidate_pool_size))
         self.vectorized_heuristic = vectorized_heuristic
 
-        self._model = None
+        self._model: dict[str, Any] | None = None
         self._rng = np.random.default_rng(seed)
 
         self._param_fields = tuple(field.name for field in fields(GlitchParameters))
@@ -72,11 +72,11 @@ class BayesianOptimizer(BaseOptimizer):
             raise ValueError("param_space must include at least one tunable parameter")
 
         self._backend_in_use = "heuristic"
-        self._backend_events: List[str] = []
+        self._backend_events: list[str] = []
         self._fallback_reason: str | None = None
         self._model_fit_count = 0
         self._candidate_evaluations = 0
-        self._timings: Dict[str, Dict[str, float]] = {
+        self._timings: dict[str, dict[str, float]] = {
             "suggest": {"count": 0.0, "total_s": 0.0, "max_s": 0.0},
             "fit": {"count": 0.0, "total_s": 0.0, "max_s": 0.0},
             "acquisition": {"count": 0.0, "total_s": 0.0, "max_s": 0.0},
@@ -86,7 +86,7 @@ class BayesianOptimizer(BaseOptimizer):
     def backend_in_use(self) -> str:
         return self._backend_in_use
 
-    def telemetry_snapshot(self) -> Dict[str, Any]:
+    def telemetry_snapshot(self) -> dict[str, Any]:
         return {
             "enabled": True,
             "backend_preference": self.backend_preference,
@@ -132,7 +132,7 @@ class BayesianOptimizer(BaseOptimizer):
 
     def _random_sample(self) -> GlitchParameters:
         """파라미터 공간에서 랜덤 샘플링"""
-        sampled: Dict[str, Any] = {}
+        sampled: dict[str, Any] = {}
         for name in self._search_fields:
             lower, upper, step, is_int = self._bounds[name]
             raw = self._rng.uniform(lower, upper)
@@ -290,11 +290,11 @@ class BayesianOptimizer(BaseOptimizer):
             self._note_backend_event("acq:heuristic_fallback")
             return None
 
-    def _predict_heuristic(self, candidate_vec: np.ndarray) -> Tuple[float, float]:
+    def _predict_heuristic(self, candidate_vec: np.ndarray) -> tuple[float, float]:
         mus, uncertainties = self._predict_heuristic_batch(candidate_vec.reshape(1, -1))
         return float(mus[0]), float(uncertainties[0])
 
-    def _predict_heuristic_batch(self, candidate_matrix: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    def _predict_heuristic_batch(self, candidate_matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         assert self._model is not None
 
         xs: np.ndarray = self._model["xs"]
@@ -345,7 +345,7 @@ class BayesianOptimizer(BaseOptimizer):
 
         if self.acquisition == "pi":
             temperature = np.maximum(0.05, uncertainty)
-            return 1.0 / (1.0 + np.exp(-(improvement / temperature)))
+            return np.asarray(1.0 / (1.0 + np.exp(-(improvement / temperature))), dtype=float)
 
         # default: EI 근사 (exploit + explore)
         return exploit_weight * improvement + explore_weight * uncertainty
@@ -381,8 +381,8 @@ class BayesianOptimizer(BaseOptimizer):
     def _vectorize(self, params: GlitchParameters) -> np.ndarray:
         return np.array([float(getattr(params, name)) for name in self._search_fields], dtype=float)
 
-    def _vector_to_sampled(self, vector: np.ndarray) -> Dict[str, Any]:
-        sampled: Dict[str, Any] = {}
+    def _vector_to_sampled(self, vector: np.ndarray) -> dict[str, Any]:
+        sampled: dict[str, Any] = {}
         for idx, name in enumerate(self._search_fields):
             lower, upper, step, is_int = self._bounds[name]
             quantized = self._quantize(name, float(vector[idx]), step, is_int)
@@ -396,8 +396,8 @@ class BayesianOptimizer(BaseOptimizer):
         highs = [self._bounds[name][1] for name in self._search_fields]
         return torch.tensor([lows, highs], dtype=torch.double)
 
-    def _build_params(self, sampled: Dict[str, Any]) -> GlitchParameters:
-        values: Dict[str, Any] = {}
+    def _build_params(self, sampled: dict[str, Any]) -> GlitchParameters:
+        values: dict[str, Any] = {}
         for field in fields(GlitchParameters):
             if field.name in sampled:
                 values[field.name] = sampled[field.name]
@@ -444,7 +444,7 @@ class BayesianOptimizer(BaseOptimizer):
         stats["total_s"] += max(0.0, elapsed_s)
         stats["max_s"] = max(stats["max_s"], max(0.0, elapsed_s))
 
-    def _latency_stats(self, key: str) -> Dict[str, Any]:
+    def _latency_stats(self, key: str) -> dict[str, Any]:
         stats = self._timings.get(key, {"count": 0.0, "total_s": 0.0, "max_s": 0.0})
         count = int(stats.get("count", 0.0))
         total = float(stats.get("total_s", 0.0))
@@ -457,8 +457,8 @@ class BayesianOptimizer(BaseOptimizer):
         }
 
     @staticmethod
-    def _build_bounds(param_space: Dict[str, Any]) -> Dict[str, Tuple[float, float, float, bool]]:
-        bounds: Dict[str, Tuple[float, float, float, bool]] = {}
+    def _build_bounds(param_space: dict[str, Any]) -> dict[str, tuple[float, float, float, bool]]:
+        bounds: dict[str, tuple[float, float, float, bool]] = {}
         for name, spec in param_space.items():
             if not isinstance(spec, dict):
                 continue

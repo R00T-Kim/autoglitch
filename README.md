@@ -11,6 +11,7 @@ BO/RL 기반 파라미터 탐색, 하드웨어 실행, 관측/분류, primitive 
 ## 지금 달라진 점
 - strict config 기준선이 **`config_version: 3`** 으로 올라갔습니다.
 - 하드웨어 계층이 **transport-agnostic registry + profile + local binding** 구조로 바뀌었습니다.
+- `src.hardware.framework` 는 이제 **호환 facade** 이고, 내부 구현은 `_framework_models / _framework_adapters / _framework_resolution / _framework_capabilities / _framework_doctor / _framework_locks` 로 분리되었습니다.
 - 새 하드웨어 명령이 추가되었습니다:
   - `detect-hardware`
   - `setup-hardware`
@@ -20,10 +21,16 @@ BO/RL 기반 파라미터 탐색, 하드웨어 실행, 관측/분류, primitive 
   - **legacy text protocol** (`serial-command-hardware`)
 - 로컬 장비 바인딩은 기본적으로 **`configs/local/hardware.yaml`** 에 저장됩니다.
 - RC급 실장비 검증 워크플로우는 **`validate-hil-rc`** 명령으로 자동화됩니다.
+- CLI leaf command는 **범용 / RL / agentic** 클러스터로 분리되어, `src.cli` 는 dispatch/facade 역할만 수행합니다.
+- campaign summary / run manifest / RL report / eval suite / knowledge query payload는 `src/types.py`의 명시 타입 계약으로 정리되었습니다.
 
-현재 소프트웨어 검증 상태(2026-03-06):
-- `pytest -q` → **`111 passed, 3 skipped`**
-- typed serial adapter / hardware detection / local binding / CLI hardware onboarding 경로 포함
+현재 소프트웨어 검증 상태(2026-03-07):
+- `python -m compileall src tests` → **green**
+- `ruff check src tests` → **green**
+- `mypy src` → **green**
+- `pytest -q` → **`113 passed, 3 skipped`**
+- full-repo CI 품질 게이트와 로컬 검증 명령이 동일합니다.
+- typed serial adapter / hardware detection / local binding / CLI hardware onboarding / RL report / eval-suite 경로 포함
 
 ## 설치
 ```bash
@@ -163,18 +170,8 @@ legacy bridge는 기존 `GLITCH width=... offset=...` 텍스트 프로토콜로 
 ## 품질 확인
 ```bash
 python -m compileall src tests
-ruff check src/hardware/framework.py src/hardware/typed_serial_hardware.py src/cli_hardware.py src/cli_validation.py --select E,F,I,SIM,B --ignore E501
-python -m mypy --follow-imports=silent \
-  src/hardware/framework.py \
-  src/hardware/typed_serial_hardware.py \
-  src/hardware/serial_hardware.py \
-  src/cli_runtime.py \
-  src/cli_hardware.py \
-  src/cli_preflight.py \
-  src/cli_support.py \
-  src/cli_validation.py \
-  src/tools/mock_glitch_bridge.py \
-  src/tools/rpi_glitch_bridge.py
+ruff check src tests
+python -m mypy src
 pytest -q
 ```
 
@@ -184,5 +181,7 @@ pytest -q
 - [`docs/SAFETY.md`](docs/SAFETY.md)
 - [`docs/PLUGIN_SDK.md`](docs/PLUGIN_SDK.md)
 - [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md)
+- [`docs/ROADMAP.md`](docs/ROADMAP.md)
+- [`docs/SOFTWARE_EVOLUTION_2026.md`](docs/SOFTWARE_EVOLUTION_2026.md)
 - [`docs/HIL_VALIDATION_REPORT_2026Q1.md`](docs/HIL_VALIDATION_REPORT_2026Q1.md)
 - [`docs/REAL_HARDWARE_CHECKLIST.md`](docs/REAL_HARDWARE_CHECKLIST.md)

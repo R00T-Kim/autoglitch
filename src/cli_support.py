@@ -8,7 +8,7 @@ import platform
 import subprocess
 import sys
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from datetime import datetime
 from pathlib import Path
 from statistics import mean
@@ -502,7 +502,7 @@ def _aggregate_rerun_results(
 
 def _write_json_report(
     prefix: str,
-    payload: dict[str, Any],
+    payload: Mapping[str, Any],
     output_dir: Path = Path("experiments/results"),
 ) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)

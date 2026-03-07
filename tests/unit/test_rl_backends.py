@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from src.cli import _create_optimizer
 from src.optimizer import RLOptimizer, SB3Optimizer
 
@@ -86,3 +88,17 @@ def test_sb3_optimizer_train_and_eval_workflow(tmp_path) -> None:
 
     telemetry = optimizer.telemetry_snapshot()
     assert telemetry["backend_requested"] == "sb3"
+
+
+def test_sb3_optimizer_checkpoint_roundtrip(tmp_path) -> None:
+    optimizer = SB3Optimizer(param_space=PARAM_SPACE, checkpoint_dir=str(tmp_path))
+    optimizer.train(steps=1)
+    checkpoint_path = optimizer.save_checkpoint(tag="roundtrip")
+
+    payload = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+    restored = optimizer.load_checkpoint(checkpoint_path)
+
+    assert restored == payload
+    assert restored["observed_steps"] == payload["observed_steps"]
+    assert restored["observed_steps"] >= 1
+    assert optimizer.telemetry_snapshot()["last_checkpoint_path"] == str(checkpoint_path)

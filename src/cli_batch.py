@@ -5,10 +5,11 @@ import argparse
 import hashlib
 import json
 import time
+from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import yaml  # type: ignore[import-untyped]
 
@@ -102,7 +103,7 @@ def queue_run(
                     "checkpoint queue digest mismatch. queue file changed; start fresh or remove checkpoint."
                 )
             checkpoint_data = loaded
-            completed_keys = set(str(item) for item in loaded.get("completed_job_keys", []))
+            completed_keys = {str(item) for item in loaded.get("completed_job_keys", [])}
 
     order_lookup: dict[str, int] = {}
     pending_items: list[dict[str, Any]] = []

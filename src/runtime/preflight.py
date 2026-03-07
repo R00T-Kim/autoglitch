@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any
 
 import numpy as np
 
@@ -27,14 +27,14 @@ def run_hil_preflight(
     thresholds: HilPreflightThresholds,
     target_name: str = "unknown",
     hardware_mode: str = "serial",
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Run N quick probe trials and evaluate serial HIL readiness."""
     trial_count = max(1, int(probe_trials))
     timeout_count = 0
     reset_count = 0
     exception_count = 0
-    response_times: List[float] = []
-    sample_errors: List[str] = []
+    response_times: list[float] = []
+    sample_errors: list[str] = []
 
     for _ in range(trial_count):
         try:
@@ -63,7 +63,7 @@ def run_hil_preflight(
     timeout_rate = timeout_count / trial_count
     reset_rate = reset_count / trial_count
 
-    reason_codes: List[str] = []
+    reason_codes: list[str] = []
     if timeout_rate > thresholds.max_timeout_rate:
         reason_codes.append("timeout_rate_exceeded")
     if reset_rate > thresholds.max_reset_rate:

@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum, auto
-from typing import Any, Dict, List, Optional
+from typing import Any, TypedDict
 
 import numpy as np
 
@@ -34,6 +34,159 @@ class ExploitPrimitiveType(Enum):
     NONE = auto()
 
 
+class RuntimeSummaryPayload(TypedDict):
+    total_seconds: float
+    throughput_trials_per_second: float
+
+
+class LatencySummaryPayload(TypedDict):
+    mean_seconds: float
+    p95_seconds: float
+    max_seconds: float
+
+
+class ReproducibilityPayload(TypedDict):
+    config_hash_sha256: str | None
+    git_sha: str | None
+    git_dirty: bool | None
+    python_version: str | None
+    platform: str | None
+
+
+class ObjectiveSummaryPayload(TypedDict):
+    mode: str
+    multi_objective_weights: dict[str, float]
+
+
+class AgenticSummaryPayload(TypedDict):
+    mode: str
+    event_count: int
+    policy_reject_count: int
+    agentic_interventions: int
+
+
+class TrainingSummaryPayload(TypedDict):
+    optimizer_backend: str | None
+    observed_steps: int | None
+    total_timesteps: int | None
+
+
+class CampaignSummaryPayload(TypedDict):
+    schema_version: int
+    campaign_id: str
+    run_id: str
+    run_tag: str | None
+    n_trials: int
+    success_rate: float
+    primitive_repro_rate: float
+    time_to_first_primitive: int | None
+    runtime: RuntimeSummaryPayload
+    latency: LatencySummaryPayload
+    error_breakdown: dict[str, int]
+    fault_distribution: dict[str, int]
+    primitive_distribution: dict[str, int]
+    pareto_front: list[dict[str, Any]]
+    config: dict[str, Any]
+    reproducibility: ReproducibilityPayload
+    objective_summary: ObjectiveSummaryPayload
+    agentic: AgenticSummaryPayload
+    decision_trace: list[dict[str, Any]]
+    training: TrainingSummaryPayload
+    optimizer_runtime: dict[str, Any]
+    mlflow: dict[str, Any]
+
+
+class RunManifestPayload(TypedDict):
+    schema_version: int
+    created_at: str
+    run_id: str
+    config_version: int
+    config_hash_sha256: str
+    runtime_fingerprint: dict[str, Any]
+    run_tag: str | None
+    target: dict[str, Any]
+    optimizer: dict[str, Any]
+    plugins: list[dict[str, Any]]
+
+
+class RLEvaluationPayload(TypedDict):
+    episodes: int
+    mean_reward: float
+    min_reward: float
+    max_reward: float
+
+
+class RLTrainResultPayload(TypedDict):
+    schema_version: int
+    optimizer: str
+    backend_requested: str
+    backend_in_use: str
+    steps_run: int
+    observed_steps: int
+    checkpoint: str | None
+    evaluation: RLEvaluationPayload
+
+
+class RLTrainReportPayload(TypedDict):
+    schema_version: int
+    created_at: str
+    template: str | None
+    target: str
+    run_tag: str | None
+    requested_backend: str
+    result: RLTrainResultPayload
+    report: str
+
+
+class RLEvalReportPayload(TypedDict):
+    schema_version: int
+    created_at: str
+    template: str | None
+    target: str
+    run_tag: str | None
+    requested_backend: str
+    backend_in_use: str
+    checkpoint_loaded: str | None
+    evaluation: RLEvaluationPayload
+    report: str
+
+
+class EvalSuiteResult(TypedDict):
+    template: str
+    target: str
+    primitive_repro_rate_mean: float
+    stable_run_ratio: float
+    passed: bool
+    raw: dict[str, Any]
+
+
+class EvalSuitePayload(TypedDict):
+    schema_version: int
+    created_at: str
+    suite_size: int
+    pass_count: int
+    pass_ratio: float
+    success_threshold: float
+    results: list[EvalSuiteResult]
+
+
+class KnowledgeRecord(TypedDict, total=False):
+    id: str
+    title: str
+    tags: list[str]
+    content: str
+    created_at: str
+    score: float
+
+
+class KnowledgeQueryPayload(TypedDict):
+    schema_version: int
+    store: str
+    query: str
+    top_k: int
+    hits: list[KnowledgeRecord]
+
+
 @dataclass
 class GlitchParameters:
     """글리치 파라미터"""
@@ -51,7 +204,7 @@ class GlitchParameters:
         )
 
     @classmethod
-    def from_array(cls, arr: np.ndarray) -> "GlitchParameters":
+    def from_array(cls, arr: np.ndarray) -> GlitchParameters:
         if len(arr) < 4:
             raise ValueError("GlitchParameters.from_array requires at least 4 values")
 
@@ -71,7 +224,7 @@ class RawResult:
     serial_output: bytes
     response_time: float
     reset_detected: bool
-    error_code: Optional[int] = None
+    error_code: int | None = None
 
 
 @dataclass
@@ -80,7 +233,7 @@ class Observation:
 
     raw: RawResult
     features: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
-    waveform: Optional[np.ndarray] = None
+    waveform: np.ndarray | None = None
     timestamp: datetime = field(default_factory=datetime.now)
 
 
@@ -103,7 +256,7 @@ class TrialResult:
     fault_class: FaultClass
     primitive: ExploitPrimitive
     timestamp: datetime = field(default_factory=datetime.now)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -130,7 +283,7 @@ class PlannerProposal:
     mode: str
     rationale: str
     confidence: float
-    changes: Dict[str, Any] = field(default_factory=dict)
+    changes: dict[str, Any] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
 
 
@@ -139,11 +292,11 @@ class PolicyVerdict:
     """정책 엔진 검증 결과."""
 
     accepted: bool
-    reasons: List[str] = field(default_factory=list)
-    normalized_changes: Dict[str, Any] = field(default_factory=dict)
+    reasons: list[str] = field(default_factory=list)
+    normalized_changes: dict[str, Any] = field(default_factory=dict)
     validation_stage: str = "policy"
-    effect_type_by_path: Dict[str, str] = field(default_factory=dict)
-    validation_status_by_path: Dict[str, str] = field(default_factory=dict)
+    effect_type_by_path: dict[str, str] = field(default_factory=dict)
+    validation_status_by_path: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass
@@ -154,10 +307,10 @@ class PlannerDecision:
     proposal: PlannerProposal
     verdict: PolicyVerdict
     applied: bool
-    applied_changes: Dict[str, Any] = field(default_factory=dict)
-    live_applied_changes: Dict[str, Any] = field(default_factory=dict)
-    deferred_changes: Dict[str, Any] = field(default_factory=dict)
-    apply_status_by_path: Dict[str, str] = field(default_factory=dict)
+    applied_changes: dict[str, Any] = field(default_factory=dict)
+    live_applied_changes: dict[str, Any] = field(default_factory=dict)
+    deferred_changes: dict[str, Any] = field(default_factory=dict)
+    apply_status_by_path: dict[str, str] = field(default_factory=dict)
     created_at: datetime = field(default_factory=datetime.now)
 
 
@@ -171,7 +324,7 @@ class ReproEvalResult:
     primitive_repro_rate_mean: float
     stable_run_ratio: float
     passed: bool
-    details: Dict[str, Any] = field(default_factory=dict)
+    details: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -179,9 +332,9 @@ class CampaignResult:
     """실험 캠페인 전체 결과"""
 
     campaign_id: str
-    trials: List[TrialResult] = field(default_factory=list)
-    config: Dict[str, Any] = field(default_factory=dict)
-    planner_events: List[Dict[str, Any]] = field(default_factory=list)
+    trials: list[TrialResult] = field(default_factory=list)
+    config: dict[str, Any] = field(default_factory=dict)
+    planner_events: list[dict[str, Any]] = field(default_factory=list)
     policy_reject_count: int = 0
     agentic_interventions: int = 0
 
@@ -202,15 +355,15 @@ class CampaignResult:
         return successes / len(self.trials)
 
     @property
-    def fault_distribution(self) -> Dict[FaultClass, int]:
-        dist: Dict[FaultClass, int] = {}
+    def fault_distribution(self) -> dict[FaultClass, int]:
+        dist: dict[FaultClass, int] = {}
         for trial in self.trials:
             dist[trial.fault_class] = dist.get(trial.fault_class, 0) + 1
         return dist
 
     @property
-    def primitive_distribution(self) -> Dict[ExploitPrimitiveType, int]:
-        dist: Dict[ExploitPrimitiveType, int] = {}
+    def primitive_distribution(self) -> dict[ExploitPrimitiveType, int]:
+        dist: dict[ExploitPrimitiveType, int] = {}
         for trial in self.trials:
             primitive_type = trial.primitive.type
             if primitive_type == ExploitPrimitiveType.NONE:
@@ -219,7 +372,7 @@ class CampaignResult:
         return dist
 
     @property
-    def time_to_first_primitive(self) -> Optional[int]:
+    def time_to_first_primitive(self) -> int | None:
         """첫 primitive 관측 trial id, 없으면 None"""
         for trial in self.trials:
             if trial.primitive.type != ExploitPrimitiveType.NONE:
@@ -249,8 +402,8 @@ class CampaignResult:
         return max(0.0, (end - start).total_seconds())
 
     @property
-    def response_times_seconds(self) -> List[float]:
-        values: List[float] = []
+    def response_times_seconds(self) -> list[float]:
+        values: list[float] = []
         for trial in self.trials:
             raw = getattr(trial.observation, "raw", None)
             if raw is None:
@@ -290,12 +443,12 @@ class CampaignResult:
         return float(self.n_trials / runtime)
 
     @property
-    def pareto_front(self) -> List[Dict[str, Any]]:
+    def pareto_front(self) -> list[dict[str, Any]]:
         """Non-dominated trials for (maximize signal score, minimize response latency)."""
         if not self.trials:
             return []
 
-        candidates: List[Dict[str, Any]] = []
+        candidates: list[dict[str, Any]] = []
         for trial in self.trials:
             response_time = float(getattr(trial.observation.raw, "response_time", 0.0))
             score = self._trial_signal_score(trial)
@@ -310,7 +463,7 @@ class CampaignResult:
                 }
             )
 
-        front: List[Dict[str, Any]] = []
+        front: list[dict[str, Any]] = []
         for idx, item in enumerate(candidates):
             dominated = False
             for jdx, other in enumerate(candidates):
@@ -332,9 +485,9 @@ class CampaignResult:
         return sorted(front, key=lambda row: int(row["trial_id"]))
 
     @property
-    def error_breakdown(self) -> Dict[str, int]:
+    def error_breakdown(self) -> dict[str, int]:
         """Distribution of orchestrator error categories from trial metadata."""
-        dist: Dict[str, int] = {}
+        dist: dict[str, int] = {}
         for trial in self.trials:
             category = "none"
             if isinstance(trial.metadata, dict):

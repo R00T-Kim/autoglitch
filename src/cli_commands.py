@@ -4,35 +4,47 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
-from statistics import mean
-from typing import Any, Callable
+from typing import Any
 
-from .agentic import AgenticPlanner, PolicyEngine
-from .cli_runtime import _create_optimizer
+from .cli_commands_agentic import (
+    eval_suite_command,
+    kb_ingest_command,
+    kb_query_command,
+    planner_step_command,
+)
+from .cli_commands_rl import eval_rl_command, train_rl_command
 from .cli_support import (
     _aggregate_rerun_results,
     _latest_report,
-    _load_config,
     _load_plugin_registry,
     _load_run_config,
-    _mean_reward_from_history,
     _read_jsonl,
     _resolve_ai_mode,
-    _resolve_policy_file,
     _resolve_run_tag,
-    _synthetic_reward,
     _validate_runtime_config,
     _write_json_report,
     compare_summary_to_report,
     summarize_trial_records,
 )
-from .optimizer import SB3Optimizer
-from .types import ContextSnapshot
 
 RunSingleCampaign = Callable[..., dict[str, Any]]
-ExecuteCampaign = Callable[[argparse.Namespace], dict[str, Any]]
+
+__all__ = [
+    "eval_rl_command",
+    "eval_suite_command",
+    "kb_ingest_command",
+    "kb_query_command",
+    "list_plugins_command",
+    "planner_step_command",
+    "replay_run_command",
+    "run_benchmark_command",
+    "show_report_command",
+    "train_rl_command",
+    "validate_config_command",
+]
 
 
 def run_benchmark_command(
@@ -120,340 +132,6 @@ def run_benchmark_command(
     path = _write_json_report("comparison", payload)
     payload["comparison_report"] = str(path)
     print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
-
-def train_rl_command(args: argparse.Namespace) -> None:
-    config, template_name = _load_run_config(args)
-    errors = _validate_runtime_config(config, mode=args.config_mode)
-    if errors:
-        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
-
-    run_tag = _resolve_run_tag(args, config)
-    config = copy.deepcopy(config)
-    config.setdefault("logging", {})["run_tag"] = run_tag
-    param_space = config.get("glitch", {}).get("parameters", {})
-    requested_backend = str(getattr(args, "rl_backend", "sb3"))
-    rl_cfg = config.get("optimizer", {}).get("rl", {})
-    total_steps = int(args.steps or rl_cfg.get("total_timesteps", 20_000))
-
-    optimizer = _create_optimizer(
-        optimizer_type="rl",
-        config=config,
-        param_space=param_space,
-        bo_backend=None,
-        rl_backend=requested_backend,
-    )
-
-    result: dict[str, Any]
-    if isinstance(optimizer, SB3Optimizer):
-        result = optimizer.train(steps=total_steps)
-    else:
-        for _ in range(total_steps):
-            params = optimizer.suggest()
-            reward = _synthetic_reward(params)
-            optimizer.observe(params, reward, context={"source": "offline_train"})
-        result = {
-            "schema_version": 1,
-            "optimizer": "rl",
-            "backend_requested": requested_backend,
-            "backend_in_use": "lite",
-            "steps_run": total_steps,
-            "observed_steps": int(getattr(optimizer, "n_trials", total_steps)),
-            "evaluation": {
-                "episodes": min(100, total_steps),
-                "mean_reward": _mean_reward_from_history(optimizer),
-            },
-        }
-
-    payload = {
-        "schema_version": 1,
-        "created_at": datetime.now().isoformat(),
-        "template": template_name,
-        "target": config.get("target", {}).get("name", args.target),
-        "run_tag": run_tag,
-        "requested_backend": requested_backend,
-        "result": result,
-    }
-    path = _write_json_report("rl_train", payload)
-    payload["report"] = str(path)
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
-
-def eval_rl_command(args: argparse.Namespace) -> None:
-    config, template_name = _load_run_config(args)
-    errors = _validate_runtime_config(config, mode=args.config_mode)
-    if errors:
-        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
-
-    run_tag = _resolve_run_tag(args, config)
-    config = copy.deepcopy(config)
-    config.setdefault("logging", {})["run_tag"] = run_tag
-    requested_backend = str(getattr(args, "rl_backend", "sb3"))
-    param_space = config.get("glitch", {}).get("parameters", {})
-
-    optimizer = _create_optimizer(
-        optimizer_type="rl",
-        config=config,
-        param_space=param_space,
-        bo_backend=None,
-        rl_backend=requested_backend,
-    )
-
-    checkpoint_loaded: str | None = None
-    if args.checkpoint and isinstance(optimizer, SB3Optimizer):
-        optimizer.load_checkpoint(args.checkpoint)
-        checkpoint_loaded = str(args.checkpoint)
-
-    if isinstance(optimizer, SB3Optimizer):
-        evaluation = optimizer.evaluate(episodes=int(args.episodes))
-        backend_in_use = optimizer.backend_in_use
-    else:
-        rewards = []
-        for _ in range(max(1, int(args.episodes))):
-            rewards.append(_synthetic_reward(optimizer.suggest()))
-        evaluation = {
-            "episodes": max(1, int(args.episodes)),
-            "mean_reward": float(mean(rewards)) if rewards else 0.0,
-            "min_reward": float(min(rewards)) if rewards else 0.0,
-            "max_reward": float(max(rewards)) if rewards else 0.0,
-        }
-        backend_in_use = "lite"
-
-    payload = {
-        "schema_version": 1,
-        "created_at": datetime.now().isoformat(),
-        "template": template_name,
-        "target": config.get("target", {}).get("name", args.target),
-        "run_tag": run_tag,
-        "requested_backend": requested_backend,
-        "backend_in_use": backend_in_use,
-        "checkpoint_loaded": checkpoint_loaded,
-        "evaluation": evaluation,
-    }
-    path = _write_json_report("rl_eval", payload)
-    payload["report"] = str(path)
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
-
-def planner_step_command(args: argparse.Namespace) -> None:
-    config, template_name = _load_run_config(args)
-    errors = _validate_runtime_config(config, mode=args.config_mode)
-    if errors:
-        raise SystemExit("config validation failed:\n- " + "\n- ".join(errors))
-
-    ai_mode = _resolve_ai_mode(args, config)
-    planner = AgenticPlanner(
-        mode=ai_mode,
-        max_actions_per_cycle=int(config.get("ai", {}).get("max_actions_per_cycle", 3)),
-    )
-    policy = PolicyEngine.from_sources(
-        config_policy=config.get("policy", {}) if isinstance(config.get("policy", {}), dict) else {},
-        policy_file=_resolve_policy_file(args, config),
-        ai_limits=config.get("ai", {}) if isinstance(config.get("ai", {}), dict) else {},
-    )
-    snapshot = ContextSnapshot(
-        trial_index=max(1, int(args.trial_index)),
-        window_size=max(1, int(args.window_size)),
-        success_rate_window=max(0.0, min(1.0, float(args.success_rate))),
-        primitive_rate_window=max(0.0, min(1.0, float(args.primitive_rate))),
-        timeout_rate_window=max(0.0, min(1.0, float(args.timeout_rate))),
-        reset_rate_window=max(0.0, min(1.0, float(args.reset_rate))),
-        latency_p95_window=max(0.0, float(args.latency_p95)),
-        optimizer_backend=str(config.get("optimizer", {}).get("type", "bayesian")),
-        target_name=str(config.get("target", {}).get("name", args.target)),
-    )
-    proposal = planner.propose(snapshot=snapshot, config=config)
-    verdict = policy.evaluate(proposal=proposal, current_config=config)
-    payload = {
-        "schema_version": 1,
-        "template": template_name,
-        "ai_mode": ai_mode,
-        "snapshot": {
-            "trial_index": snapshot.trial_index,
-            "window_size": snapshot.window_size,
-            "success_rate_window": snapshot.success_rate_window,
-            "primitive_rate_window": snapshot.primitive_rate_window,
-            "timeout_rate_window": snapshot.timeout_rate_window,
-            "reset_rate_window": snapshot.reset_rate_window,
-            "latency_p95_window": snapshot.latency_p95_window,
-            "optimizer_backend": snapshot.optimizer_backend,
-            "target_name": snapshot.target_name,
-        },
-        "proposal": {
-            "proposal_id": proposal.proposal_id,
-            "rationale": proposal.rationale,
-            "confidence": proposal.confidence,
-            "changes": proposal.changes,
-        },
-        "policy_verdict": {
-            "accepted": verdict.accepted,
-            "reasons": verdict.reasons,
-            "normalized_changes": verdict.normalized_changes,
-            "validation_stage": verdict.validation_stage,
-            "effect_type_by_path": verdict.effect_type_by_path,
-            "validation_status_by_path": verdict.validation_status_by_path,
-        },
-    }
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
-
-def eval_suite_command(
-    args: argparse.Namespace,
-    *,
-    execute_campaign: ExecuteCampaign,
-) -> None:
-    templates = [item.strip() for item in str(args.templates).split(",") if item.strip()]
-    if not templates:
-        raise SystemExit("no templates provided")
-
-    results: list[dict[str, Any]] = []
-    for template in templates:
-        run_args = argparse.Namespace(
-            config="configs/default.yaml",
-            template=template,
-            config_mode=args.config_mode,
-            target="stm32f3",
-            trials=None,
-            optimizer=None,
-            bo_backend=None,
-            rl_backend=None,
-            ai_mode=args.ai_mode,
-            policy_file=args.policy_file,
-            objective=None,
-            enable_llm=False,
-            target_primitive=None,
-            hardware=None,
-            serial_port=None,
-            serial_timeout=None,
-            serial_io=None,
-            require_preflight=False,
-            rerun_count=None,
-            fixed_seed=None,
-            success_threshold=args.success_threshold,
-            run_tag=args.run_tag,
-            plugin_dir=[],
-        )
-        output = execute_campaign(run_args)
-        aggregate = output.get("aggregate", {})
-        score = float(aggregate.get("primitive_repro_rate_mean", 0.0))
-        stable = float(aggregate.get("stable_run_ratio", 0.0))
-        passed = score >= float(args.success_threshold)
-        results.append(
-            {
-                "template": template,
-                "target": output.get("template") or template,
-                "primitive_repro_rate_mean": score,
-                "stable_run_ratio": stable,
-                "passed": passed,
-                "raw": output,
-            }
-        )
-
-    pass_count = len([item for item in results if item["passed"]])
-    payload = {
-        "schema_version": 1,
-        "created_at": datetime.now().isoformat(),
-        "suite_size": len(results),
-        "pass_count": pass_count,
-        "pass_ratio": (pass_count / len(results)) if results else 0.0,
-        "success_threshold": float(args.success_threshold),
-        "results": results,
-    }
-    path = _write_json_report("eval_suite", payload)
-    payload["report"] = str(path)
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
-
-
-
-def kb_ingest_command(args: argparse.Namespace) -> None:
-    config = _load_config(Path("configs/default.yaml"), "stm32f3")
-    default_store = str(config.get("knowledge", {}).get("store_path", "data/knowledge/kb.jsonl"))
-    store = Path(args.store or default_store)
-    store.parent.mkdir(parents=True, exist_ok=True)
-
-    content = ""
-    if args.source_file:
-        source = Path(args.source_file)
-        if not source.exists():
-            raise SystemExit(f"source file not found: {source}")
-        content = source.read_text(encoding="utf-8")
-    elif args.text:
-        content = str(args.text)
-    else:
-        raise SystemExit("provide --source-file or --text")
-
-    tags = [tag.strip() for tag in str(args.tags).split(",") if tag.strip()]
-    record = {
-        "id": f"kb_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}",
-        "title": args.title or (Path(args.source_file).name if args.source_file else "inline-note"),
-        "tags": tags,
-        "content": content,
-        "created_at": datetime.now().isoformat(),
-    }
-    with store.open("a", encoding="utf-8") as handle:
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
-
-    print(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "store": str(store),
-                "ingested_id": record["id"],
-                "title": record["title"],
-                "tags": tags,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
-
-
-
-def kb_query_command(args: argparse.Namespace) -> None:
-    config = _load_config(Path("configs/default.yaml"), "stm32f3")
-    default_store = str(config.get("knowledge", {}).get("store_path", "data/knowledge/kb.jsonl"))
-    top_k_default = int(config.get("knowledge", {}).get("retrieval_top_k", 5))
-    top_k = max(1, int(args.top_k or top_k_default))
-
-    store = Path(args.store or default_store)
-    if not store.exists():
-        raise SystemExit(f"knowledge store not found: {store}")
-
-    query_terms = [term for term in str(args.query).lower().split() if term]
-    scored: list[dict[str, Any]] = []
-    with store.open("r", encoding="utf-8") as handle:
-        for line in handle:
-            line = line.strip()
-            if not line:
-                continue
-            row = json.loads(line)
-            text = f"{row.get('title', '')} {row.get('content', '')}".lower()
-            score = 0.0
-            for term in query_terms:
-                score += text.count(term)
-            if score > 0:
-                row["score"] = score
-                scored.append(row)
-
-    scored.sort(key=lambda item: float(item.get("score", 0.0)), reverse=True)
-    hits = scored[:top_k]
-    print(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "store": str(store),
-                "query": args.query,
-                "top_k": top_k,
-                "hits": hits,
-            },
-            indent=2,
-            ensure_ascii=False,
-        )
-    )
 
 
 

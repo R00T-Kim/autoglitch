@@ -6,7 +6,7 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 ## Primary KPI
 - **Primitive reproducibility rate**: ratio of repeated primitive hits under fixed settings.
 
-## Current Status (2026-03-06)
+## Current Status (2026-03-07)
 - ✅ Strict config / safety / recovery baseline
 - ✅ Queue/soak/replay/benchmark 운영 경로
 - ✅ Async serial persistent + reconnect
@@ -17,7 +17,10 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 - ✅ RL train/eval CLI + SB3 facade checkpoint/eval 경로
 - ✅ BO backend 확장(`turbo`, `qnehvi`) + objective mode 도입
 - ✅ Agentic planner/policy skeleton + decision trace + eval-suite/kb utilities
-- 🔜 Next: botorch 기반 TuRBO/qNEHVI true backend 정교화, HIL 게이트 강화
+- ✅ Full-repo quality gate green (`compileall` / `ruff` / `mypy` / `pytest`)
+- ✅ CLI leaf handler 분리 + hardware framework facade/internal split
+- ✅ Typed report payload contracts(campaign/manifest/RL/eval-suite/knowledge)
+- 🔜 Next: botorch 기반 TuRBO/qNEHVI true backend 정교화, RL callback 고도화, 실장비 증거 수집
 
 ## Milestones
 
@@ -49,7 +52,7 @@ Deliver a reproducible dual-target (STM32F3 + ESP32) closed-loop glitching workf
 ## Next Wave (Research/Performance)
 1. TuRBO/qNEHVI botorch-native 경로 정교화(현재는 호환 backend 레이어)
 2. RL true online/offline 학습 루프(실장비/시뮬레이터 분리, callback 고도화)
-3. HIL gate: serial jitter/timeout stress, 재현성/안정성 기준선 확정
+3. HIL gate + evidence: serial jitter/timeout stress, 재현성/안정성 기준선 확정, RC report에 실측 데이터 연결
 
 ## Deliverables
 - `autoglitch run` and `autoglitch report` CLI flow.

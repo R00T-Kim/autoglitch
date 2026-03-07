@@ -1,8 +1,6 @@
 """Fault-to-Primitive 매퍼"""
 from __future__ import annotations
 
-from typing import Dict, List
-
 from ..types import ExploitPrimitive, ExploitPrimitiveType, FaultClass, Observation
 
 
@@ -10,7 +8,7 @@ class PrimitiveMapper:
     """결함 클래스를 exploitable primitive로 매핑"""
 
     # 기본 매핑 테이블
-    DEFAULT_MAPPING: Dict[FaultClass, List[ExploitPrimitiveType]] = {
+    DEFAULT_MAPPING: dict[FaultClass, list[ExploitPrimitiveType]] = {
         FaultClass.INSTRUCTION_SKIP: [
             ExploitPrimitiveType.AUTH_CHECK_BYPASS,
             ExploitPrimitiveType.CONTROL_FLOW_HIJACK,
@@ -53,13 +51,14 @@ class PrimitiveMapper:
 
     def _choose_candidate(
         self,
-        candidates: List[ExploitPrimitiveType],
+        candidates: list[ExploitPrimitiveType],
         fault_class: FaultClass,
         serial_text: str,
     ) -> ExploitPrimitiveType:
-        if fault_class == FaultClass.AUTH_BYPASS:
-            if any(keyword in serial_text for keyword in ("shell", "exec", "command")):
-                return ExploitPrimitiveType.CODE_EXECUTION
+        if fault_class == FaultClass.AUTH_BYPASS and any(
+            keyword in serial_text for keyword in ("shell", "exec", "command")
+        ):
+            return ExploitPrimitiveType.CODE_EXECUTION
 
         if fault_class == FaultClass.INSTRUCTION_SKIP:
             if any(keyword in serial_text for keyword in ("auth", "check", "verify")):

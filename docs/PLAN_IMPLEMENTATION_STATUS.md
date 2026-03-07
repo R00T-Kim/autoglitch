@@ -1,4 +1,4 @@
-# Plan Implementation Status (2026-03-06)
+# Plan Implementation Status (2026-03-07)
 
 ## ✅ Implemented in this cycle (Phase 1)
 
@@ -30,7 +30,7 @@
   - async serial persistence + reconnect
   - vectorized BO telemetry
   - schema v4 latency/Pareto summary
-- Current test status (2026-03-06): `111 passed, 3 skipped`.
+- Current test status (2026-03-07): `113 passed, 3 skipped`.
 
 ## 🔜 Next phase candidates
 - SB3 true online/offline training path (callbacks/checkpoint/eval integration)
@@ -120,7 +120,7 @@
 - Validation:
   - CLI-focused regression suite passed after each extraction stage
   - targeted Ruff and targeted mypy for all extracted CLI modules passed
-  - full `pytest -q` remained green (`111 passed, 3 skipped`)
+  - full `pytest -q` remained green (`113 passed, 3 skipped`)
 
 
 ## ✅ Additional implementation (Phase 6, 2026-03-06)
@@ -143,7 +143,7 @@
   - Raspberry Pi bridge now speaks both legacy text and typed JSONL
 - Validation:
   - added tests for typed serial adapter, hardware framework resolution, CLI onboarding commands, bridge typed protocol handling
-  - current test status: `111 passed, 3 skipped`
+- current test status: `113 passed, 3 skipped`
 
 ## ✅ Additional implementation (Phase 7, 2026-03-06)
 - RC HIL validation workflow implemented around `validate-hil-rc`:
@@ -152,4 +152,33 @@
   - legacy smoke + manual recovery confirmation flags
 - `doctor-hardware` now performs adapter healthchecks and degrades on stale local bindings.
 - Docs call out that bridge restart / serial link drop drills still require explicit operator confirmation in the lab.
-- Current test status updated to `111 passed, 3 skipped`.
+- Current test status updated to `113 passed, 3 skipped`.
+
+## ✅ Additional implementation (Phase 8, 2026-03-07)
+- Full-repo quality gate hardening completed:
+  - `python -m compileall src tests`
+  - `ruff check src tests`
+  - `mypy src`
+  - `pytest -q`
+  - local validation and GitHub CI now use the same gate set
+- CLI command cluster split advanced:
+  - `src/cli_commands.py` now keeps general report/benchmark/validation/replay handlers
+  - `src/cli_commands_rl.py` owns RL train/eval handlers
+  - `src/cli_commands_agentic.py` owns planner/eval-suite/knowledge handlers
+- Hardware framework internals split behind compatibility facade:
+  - `src/hardware/framework.py` → public import surface only
+  - `_framework_models`, `_framework_adapters`, `_framework_resolution`,
+    `_framework_capabilities`, `_framework_doctor`, `_framework_locks`
+- Typed payload contracts expanded in `src/types.py`:
+  - campaign summary / run manifest
+  - RL train/eval reports
+  - eval-suite and knowledge query payloads
+- Regression coverage added/kept green for:
+  - campaign summary JSONL/report schema path
+  - SB3 checkpoint roundtrip / RL backend report flow
+- Current validation snapshot (2026-03-07):
+  - `python -m compileall src tests` ✅
+  - `ruff check src tests` ✅
+  - `mypy src` ✅
+  - `pytest -q` ✅ (`113 passed, 3 skipped`)
+  - `python -m src.cli validate-config --target stm32f3` ✅

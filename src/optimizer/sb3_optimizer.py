@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 from statistics import mean
-from typing import Any, Dict, List
+from typing import Any, cast
 
 from ..types import GlitchParameters
 from .base import BaseOptimizer
@@ -28,7 +28,7 @@ class SB3Optimizer(BaseOptimizer):
 
     def __init__(
         self,
-        param_space: Dict[str, Any],
+        param_space: dict[str, Any],
         seed: int = 42,
         algorithm: str = "ppo",
         learning_rate: float = 3e-4,
@@ -64,14 +64,14 @@ class SB3Optimizer(BaseOptimizer):
         self._best_eval_score = float("-inf")
         self._last_checkpoint_path: str | None = None
         self._backend_in_use = "sb3" if _HAS_SB3 else "lite_fallback"
-        self._reward_history: List[float] = []
-        self._latency_history: List[float] = []
+        self._reward_history: list[float] = []
+        self._latency_history: list[float] = []
 
     @property
     def backend_in_use(self) -> str:
         return self._backend_in_use
 
-    def telemetry_snapshot(self) -> Dict[str, Any]:
+    def telemetry_snapshot(self) -> dict[str, Any]:
         return {
             "enabled": True,
             "backend_requested": "sb3",
@@ -118,7 +118,7 @@ class SB3Optimizer(BaseOptimizer):
             self.save_checkpoint()
             self._last_checkpoint_step = self._observed_steps
 
-    def train(self, steps: int | None = None) -> Dict[str, Any]:
+    def train(self, steps: int | None = None) -> dict[str, Any]:
         """Run software-only training warmup and emit a checkpoint report."""
         target_steps = int(steps or self.total_timesteps)
         target_steps = max(1, target_steps)
@@ -153,7 +153,7 @@ class SB3Optimizer(BaseOptimizer):
             "evaluation": evaluation,
         }
 
-    def evaluate(self, episodes: int = 20) -> Dict[str, Any]:
+    def evaluate(self, episodes: int = 20) -> dict[str, Any]:
         """Evaluate optimizer using observed history or synthetic rollouts."""
         n_episodes = max(1, int(episodes))
         if self._reward_history:
@@ -215,9 +215,9 @@ class SB3Optimizer(BaseOptimizer):
         self._last_checkpoint_path = str(path)
         return path
 
-    def load_checkpoint(self, path: str | Path) -> Dict[str, Any]:
+    def load_checkpoint(self, path: str | Path) -> dict[str, Any]:
         checkpoint_path = Path(path)
-        payload = json.loads(checkpoint_path.read_text(encoding="utf-8"))
+        payload = cast(dict[str, Any], json.loads(checkpoint_path.read_text(encoding="utf-8")))
         self._observed_steps = int(payload.get("observed_steps", 0))
         self._last_checkpoint_step = self._observed_steps
         best_eval = payload.get("best_eval_score")

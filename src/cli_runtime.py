@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import argparse
 import copy
-from typing import Any, Dict
+from typing import Any
 
 from .hardware import (
     HardwareResolutionError,
@@ -14,7 +14,7 @@ from .logging_viz import MLflowTracker
 from .optimizer import BayesianOptimizer, RLOptimizer, SB3Optimizer
 
 
-def _create_mlflow_tracker(config: Dict[str, Any]) -> MLflowTracker:
+def _create_mlflow_tracker(config: dict[str, Any]) -> MLflowTracker:
     logging_cfg = config.get("logging", {})
     nested_mlflow_cfg = logging_cfg.get("mlflow", {}) if isinstance(logging_cfg.get("mlflow", {}), dict) else {}
 
@@ -35,8 +35,8 @@ def _create_mlflow_tracker(config: Dict[str, Any]) -> MLflowTracker:
 
 def _create_optimizer(
     optimizer_type: str,
-    config: Dict[str, Any],
-    param_space: Dict[str, Any],
+    config: dict[str, Any],
+    param_space: dict[str, Any],
     bo_backend: str | None,
     rl_backend: str | None,
 ):
@@ -87,7 +87,7 @@ def _create_optimizer(
 
 
 
-def _create_hardware(args: argparse.Namespace, config: Dict[str, Any], seed: int):
+def _create_hardware(args: argparse.Namespace, config: dict[str, Any], seed: int):
     registry = build_default_registry()
     runtime_config = copy.deepcopy(config)
     hardware_cfg = runtime_config.setdefault("hardware", {})

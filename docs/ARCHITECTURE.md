@@ -2,25 +2,19 @@
 
 > **"LLM이 못하는 하드웨어 해킹을 AI가 하게 만드는"** closed-loop 자동 글리칭 시스템
 
-## 최근 소프트웨어 업데이트 (2026-03-06)
+## 최근 소프트웨어 업데이트 (2026-03-07)
 
-- **Strict Config 계층**: `pydantic` 기반 strict schema 검증 (`--config-mode strict|legacy`)
-- **Config v3 기준선**: strict mode는 `config_version: 3`를 요구하고 `recovery`/`ext_offset` + hardware binding/discovery 필드를 포함
-- **Serial I/O 모드 분리**: `sync`(기본) + `async` 옵션 (`--serial-io async`) + persistent/reconnect 상태머신
-- **Async serial sync-wrapper 안정화**: 이미 실행 중인 event loop 안에서도 동작
-- **HIL 사전검증 게이트**: `hil-preflight` + `--require-preflight`로 serial 안정성 확인 후 캠페인 실행
-- **RL 학습/평가 경로**: `train-rl` / `eval-rl` + SB3 facade checkpoint/load/eval
-- **BO backend 확장**: `auto|heuristic|botorch|turbo|qnehvi` + objective mode(`single|multi`)
-- **Agentic 제어 계층**: Planner Proposal → Typed Policy Gate → Patch Apply 루프 (`run-agentic`)
-- **지식 계층 베이스라인**: `kb-ingest`/`kb-query` 로컬 지식 저장소
-- **추적 고도화**: campaign summary `schema_version: 6`, JSONL decision trace + apply metadata 포함
-- **보안 파이프라인**: CI + CodeQL + Semgrep 워크플로우 분리
-- **CLI 계층 분해**: `src.cli`는 facade/dispatch를 담당하고 parser/runtime/execution/batch/preflight/agentic helper는 전용 모듈로 분리
+- **Strict Config + Config v3 기준선**: strict mode는 `config_version: 3`를 요구하고 `recovery`/`ext_offset` + hardware binding/discovery 필드를 포함
+- **Serial runtime hardening**: `sync`/`async` I/O, persistent session, reconnect 정책, event-loop-safe sync wrapper
+- **HIL 운영 게이트**: `hil-preflight`, `--require-preflight`, `validate-hil-rc` 기반 software-first RC workflow
+- **RL / Agentic 경로 확장**: `train-rl` / `eval-rl`, planner/policy, `eval-suite`, `kb-ingest`, `kb-query`
+- **Typed report contracts**: campaign summary, run manifest, RL train/eval, eval-suite, knowledge query payload를 `src/types.py`에서 명시 타입으로 관리
+- **CLI 계층 분해**: `src.cli`는 facade/dispatch를 담당하고, leaf handler는 `src/cli_commands.py`, `src/cli_commands_rl.py`, `src/cli_commands_agentic.py`로 분리
+- **하드웨어 프레임워크 내부 분해**: `src.hardware.framework`는 public compatibility facade이고, 내부 구현은 `_framework_models / _framework_adapters / _framework_resolution / _framework_capabilities / _framework_doctor / _framework_locks` 로 책임 분리
 - **범용 하드웨어 프레임워크**: transport-agnostic registry + official hardware profiles + local binding store(`configs/local/hardware.yaml`)
-- **장비 온보딩 명령**: `detect-hardware` / `setup-hardware` / `doctor-hardware` 추가
-- **프로토콜 이중화**: typed serial `autoglitch.v1`를 기본 권장 경로로, legacy text serial은 fallback으로 유지
-- **하드웨어 프레임워크 v1**: transport-agnostic registry/profile/binding 계층 + `detect-hardware`/`setup-hardware`/`doctor-hardware` 추가
-- **Serial protocol 이원화**: `autoglitch.v1` typed JSONL 경로(`serial-json-hardware`) + legacy text fallback(`serial-command-hardware`)
+- **장비 온보딩 명령**: `detect-hardware` / `setup-hardware` / `doctor-hardware`
+- **프로토콜 이중화**: typed serial `autoglitch.v1`(`serial-json-hardware`) + legacy text fallback(`serial-command-hardware`)
+- **품질 게이트 정렬**: local/CI 기준이 `python -m compileall src tests`, `ruff check src tests`, `mypy src`, `pytest -q`로 일치하고, 최신 로컬 검증 결과는 `113 passed, 3 skipped`
 
 ---
 
@@ -342,6 +336,17 @@ class HardwareBinding:
 - `detect-hardware`가 후보를 스캔/정렬
 - `setup-hardware`가 선택 결과를 `configs/local/hardware.yaml`에 저장
 - `run`/`soak`/`queue-run`/`hil-preflight`는 explicit override → local binding → auto-detect 순으로 해석
+
+**내부 구현 분해 (2026-03-07):**
+- `src/hardware/framework.py`: public import surface를 유지하는 compatibility facade
+- `src/hardware/_framework_models.py`: profile/binding/error/model 계약
+- `src/hardware/_framework_adapters.py`: profile 로드 + registry/adaptor 생성
+- `src/hardware/_framework_resolution.py`: candidate scan + resolution path
+- `src/hardware/_framework_capabilities.py`: required capability filtering
+- `src/hardware/_framework_doctor.py`: onboarding/healthcheck diagnostics
+- `src/hardware/_framework_locks.py`: binding-level runtime lock
+
+이 분해 덕분에 이전의 1k-line 단일 파일 hotspot이 사라졌고, public API(`src.hardware.framework`)는 그대로 유지된다.
 
 **현재 공식 adapter:**
 | Adapter | Transport | Protocol | 역할 |
@@ -712,6 +717,15 @@ class PaperPlotter:
 | 메트릭 | `fault_class=3`, `exploitability=0.85`, `response_time=0.042` |
 | 아티팩트 | 파형 데이터, 분류 모델, 설정 YAML |
 
+**Typed artifact contracts (2026-03-07):**
+- `CampaignSummaryPayload`
+- `RunManifestPayload`
+- `RLTrainReportPayload` / `RLEvalReportPayload`
+- `EvalSuitePayload`
+- `KnowledgeQueryPayload`
+
+즉, 운영 산출물은 더 이상 ad-hoc dict만으로 다뤄지지 않고 `src/types.py`의 명시 계약을 통해 생성/검증된다.
+
 **대시보드 패널:**
 
 ```
@@ -744,7 +758,7 @@ class PaperPlotter:
 
 ## 5. 핵심 데이터 타입
 
-모든 데이터 타입은 `dataclass` 또는 `enum`으로 정의되며,
+핵심 런타임 타입은 `dataclass`/`enum`으로, 운영 산출물(report/manifest/query payload)은 `TypedDict`로 정의되며
 모듈 간 데이터 교환의 계약(contract) 역할을 한다.
 
 ```python
@@ -925,13 +939,19 @@ autoglitch experiment.name=my_exp experiment.seed=123
 │       ├── nrf52.yaml
 │       └── esp32.yaml
 │
-├── src/                        # 소스 코드 (8개 모듈)
+├── src/                        # 소스 코드
 │   ├── __init__.py
+│   ├── cli.py                  #   호환 facade + command dispatcher
+│   ├── cli_commands.py         #   범용 leaf command handler
+│   ├── cli_commands_rl.py      #   RL train/eval CLI handler
+│   ├── cli_commands_agentic.py #   agentic/eval-suite/knowledge CLI handler
 │   ├── orchestrator/           #   A. 실험 오케스트레이터
 │   │   └── __init__.py
 │   ├── optimizer/              #   B. 파라미터 옵티마이저
 │   │   └── __init__.py
 │   ├── hardware/               #   C. 하드웨어 인터페이스
+│   │   ├── framework.py        #   public compatibility facade
+│   │   ├── _framework_*.py     #   models/adapters/resolution/capabilities/doctor/locks
 │   │   └── __init__.py
 │   ├── observer/               #   D. 관측 수집기
 │   │   └── __init__.py
@@ -1036,5 +1056,5 @@ logging_viz  ──▶ (독립, mlflow/plotly/matplotlib 사용)
 ---
 
 > **문서 버전:** v0.1.0
-> **최종 수정:** 2026-03-06
+> **최종 수정:** 2026-03-07
 > **프로젝트:** AUTOGLITCH - CYAI Lab

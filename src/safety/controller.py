@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from collections import deque
 from dataclasses import dataclass
-from typing import Any, Deque, Dict, Optional
+from typing import Any
 
 from ..types import GlitchParameters
 
@@ -28,7 +28,7 @@ class SafetyLimits:
     ext_offset_min: float = 0.0
     ext_offset_max: float = 1_000_000.0
     min_cooldown_s: float = 0.0
-    max_trials_per_minute: Optional[int] = None
+    max_trials_per_minute: int | None = None
     auto_throttle: bool = True
 
 
@@ -37,11 +37,11 @@ class SafetyController:
 
     def __init__(self, limits: SafetyLimits):
         self.limits = limits
-        self._last_fire_ts: Optional[float] = None
-        self._recent_trials: Deque[float] = deque()
+        self._last_fire_ts: float | None = None
+        self._recent_trials: deque[float] = deque()
 
     @classmethod
-    def from_config(cls, config: Dict[str, Any]) -> "SafetyController":
+    def from_config(cls, config: dict[str, Any]) -> SafetyController:
         glitch_params = config.get("glitch", {}).get("parameters", {})
         safety_cfg = config.get("safety", {})
 
@@ -78,7 +78,7 @@ class SafetyController:
         )
         return cls(limits)
 
-    def validate_config(self, config: Dict[str, Any]) -> list[str]:
+    def validate_config(self, config: dict[str, Any]) -> list[str]:
         errors: list[str] = []
         cfg = config.get("safety", {})
         glitch_cfg = config.get("glitch", {})

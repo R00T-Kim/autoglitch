@@ -3,11 +3,17 @@ from __future__ import annotations
 
 import logging
 from enum import Enum, auto
-from typing import Optional
 
 from ..runtime import CircuitOpenError, RecoveryExecutor
 from ..safety import SafetyController, SafetyViolation
-from ..types import CampaignResult, ExploitPrimitive, FaultClass, GlitchParameters, RawResult, TrialResult
+from ..types import (
+    CampaignResult,
+    ExploitPrimitive,
+    FaultClass,
+    GlitchParameters,
+    RawResult,
+    TrialResult,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -35,7 +41,7 @@ class ExperimentOrchestrator:
         mapper,
         logger_viz,
         llm_advisor=None,
-        config: Optional[dict] = None,
+        config: dict | None = None,
         safety_controller: SafetyController | None = None,
         recovery_executor: RecoveryExecutor | None = None,
     ):
