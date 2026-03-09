@@ -1,4 +1,5 @@
 """Diagnostics helpers for hardware resolution."""
+
 from __future__ import annotations
 
 from contextlib import suppress
@@ -40,10 +41,14 @@ def doctor_hardware(
         )
         binding = resolution.selected
         selected_from = resolution.source
-        if resolution.source == "local-binding" and candidates and not any(
-            candidate.binding.adapter_id == binding.adapter_id
-            and candidate.binding.location == binding.location
-            for candidate in candidates
+        if (
+            resolution.source == "local-binding"
+            and candidates
+            and not any(
+                candidate.binding.adapter_id == binding.adapter_id
+                and candidate.binding.location == binding.location
+                for candidate in candidates
+            )
         ):
             findings.append(
                 HardwareDoctorFinding(

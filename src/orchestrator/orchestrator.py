@@ -1,4 +1,5 @@
 """실험 오케스트레이터 - closed-loop 글리칭 자동화의 핵심."""
+
 from __future__ import annotations
 
 import logging
@@ -8,7 +9,9 @@ from ..runtime import CircuitOpenError, RecoveryExecutor
 from ..safety import SafetyController, SafetyViolation
 from ..types import (
     CampaignResult,
+    ExecutionMetadata,
     ExploitPrimitive,
+    ExploitPrimitiveType,
     FaultClass,
     GlitchParameters,
     RawResult,
@@ -77,7 +80,7 @@ class ExperimentOrchestrator:
                 self.safety_controller.pre_trial(params)
 
         self.state = OrchestratorState.GLITCH
-        raw_result, recovery_meta = self._safe_execute(params)
+        raw_result, recovery_meta, execution = self._safe_execute(params)
         self._last_recovery_meta = recovery_meta
         if self.safety_controller is not None:
             self.safety_controller.post_trial()
@@ -86,24 +89,39 @@ class ExperimentOrchestrator:
         observation = self.observer.collect(raw_result)
 
         self.state = OrchestratorState.CLASSIFY
-        fault_class = self.classifier.classify(observation)
+        if execution.status == "ok":
+            fault_class = self.classifier.classify(observation)
+        else:
+            fault_class = FaultClass.UNKNOWN
 
         self.state = OrchestratorState.MAP
-        primitive = self.mapper.map(fault_class, observation)
+        if execution.status == "ok":
+            primitive = self.mapper.map(fault_class, observation)
+        else:
+            primitive = ExploitPrimitive(
+                type=ExploitPrimitiveType.NONE,
+                confidence=0.0,
+                description=f"execution_{execution.status}",
+            )
 
         self.state = OrchestratorState.FEEDBACK
-        reward = self._compute_reward(fault_class, primitive)
-        self.optimizer.observe(
-            params,
-            reward,
-            context={
-                "fault_class": fault_class.name,
-                "primitive": primitive.type.name,
-                "trial_id": self._trial_count + 1,
-                "safety": safety_note,
-                "recovery": recovery_meta,
-            },
-        )
+        if execution.status == "ok":
+            reward = self._compute_reward(fault_class, primitive)
+            self.optimizer.observe(
+                params,
+                reward,
+                context={
+                    "fault_class": fault_class.name,
+                    "primitive": primitive.type.name,
+                    "trial_id": self._trial_count + 1,
+                    "safety": safety_note,
+                    "recovery": recovery_meta,
+                    "response_time": raw_result.response_time,
+                    "reset_detected": raw_result.reset_detected,
+                    "error_code": raw_result.error_code,
+                    "execution_status": execution.status,
+                },
+            )
 
         self._trial_count += 1
         trial = TrialResult(
@@ -112,10 +130,11 @@ class ExperimentOrchestrator:
             observation=observation,
             fault_class=fault_class,
             primitive=primitive,
+            execution=execution,
             metadata={
                 "target": self.config.get("target", {}).get("name", "unknown"),
                 "run_id": self.config.get("run_id", "local"),
-                "error_category": self._categorize_error(fault_class),
+                "error_category": self._categorize_error(fault_class, execution.status),
                 "seed": self.config.get("experiment", {}).get("seed"),
                 "repro_tag": self.config.get("repro_tag", "default"),
                 "safety": safety_note,
@@ -134,7 +153,9 @@ class ExperimentOrchestrator:
         )
 
         if self.llm_advisor:
-            strategy = self.llm_advisor.suggest_search_strategy(target_info=self.config.get("target"))
+            strategy = self.llm_advisor.suggest_search_strategy(
+                target_info=self.config.get("target")
+            )
             logger.info("LLM suggested strategy: %s", strategy)
 
         for i in range(n_trials):
@@ -152,11 +173,21 @@ class ExperimentOrchestrator:
         self.state = OrchestratorState.DONE
         return campaign
 
-    def _safe_execute(self, params) -> tuple[RawResult, dict]:
+    def _safe_execute(self, params) -> tuple[RawResult, dict, ExecutionMetadata]:
         if self.recovery_executor is None:
             try:
                 result = self.hardware.execute(params)
-                return result, {"attempts": 1, "recovered": False, "circuit_state_after": "disabled"}
+                return (
+                    result,
+                    {"attempts": 1, "recovered": False, "circuit_state_after": "disabled"},
+                    ExecutionMetadata(
+                        status="ok",
+                        origin="hardware",
+                        attempts=1,
+                        recovered=False,
+                        circuit_state_after="disabled",
+                    ),
+                )
             except Exception as exc:  # pragma: no cover - defensive path
                 logger.exception("Hardware execution failed: %s", exc)
                 return (
@@ -166,12 +197,37 @@ class ExperimentOrchestrator:
                         reset_detected=False,
                         error_code=999,
                     ),
-                    {"attempts": 1, "recovered": False, "last_error": str(exc), "circuit_state_after": "disabled"},
+                    {
+                        "attempts": 1,
+                        "recovered": False,
+                        "last_error": str(exc),
+                        "circuit_state_after": "disabled",
+                    },
+                    ExecutionMetadata(
+                        status="infra_failure",
+                        origin="synthetic",
+                        attempts=1,
+                        recovered=False,
+                        circuit_state_after="disabled",
+                        error_type=type(exc).__name__,
+                        error_message=str(exc),
+                    ),
                 )
 
         try:
             result, meta = self.recovery_executor.execute(lambda: self.hardware.execute(params))
-            return result, meta
+            return (
+                result,
+                meta,
+                ExecutionMetadata(
+                    status="ok",
+                    origin="recovery" if bool(meta.get("recovered", False)) else "hardware",
+                    attempts=int(meta.get("attempts", 1)),
+                    recovered=bool(meta.get("recovered", False)),
+                    circuit_state_after=str(meta.get("circuit_state_after", "closed")),
+                    error_message=str(meta.get("last_error", "")) or None,
+                ),
+            )
         except CircuitOpenError as exc:
             logger.warning("Circuit breaker open: %s", exc)
             return (
@@ -187,6 +243,15 @@ class ExperimentOrchestrator:
                     "last_error": str(exc),
                     "circuit_state_after": "open",
                 },
+                ExecutionMetadata(
+                    status="blocked",
+                    origin="recovery",
+                    attempts=0,
+                    recovered=False,
+                    circuit_state_after="open",
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                ),
             )
         except Exception as exc:  # pragma: no cover - defensive path
             logger.exception("Hardware execution failed after retries: %s", exc)
@@ -204,6 +269,15 @@ class ExperimentOrchestrator:
                     "last_error": str(exc),
                     "circuit_state_after": state,
                 },
+                ExecutionMetadata(
+                    status="infra_failure",
+                    origin="recovery",
+                    attempts=int(self.recovery_executor.retry.max_attempts),
+                    recovered=False,
+                    circuit_state_after=str(state),
+                    error_type=type(exc).__name__,
+                    error_message=str(exc),
+                ),
             )
 
     def _fallback_safe_params(self, params: GlitchParameters) -> GlitchParameters:
@@ -235,7 +309,11 @@ class ExperimentOrchestrator:
         return min(reward, 1.0)
 
     @staticmethod
-    def _categorize_error(fault_class: FaultClass) -> str:
+    def _categorize_error(fault_class: FaultClass, execution_status: str = "ok") -> str:
+        if execution_status == "infra_failure":
+            return "infra_failure"
+        if execution_status == "blocked":
+            return "execution_blocked"
         if fault_class in (FaultClass.RESET, FaultClass.CRASH):
             return "runtime_failure"
         if fault_class in (FaultClass.INSTRUCTION_SKIP, FaultClass.DATA_CORRUPTION):

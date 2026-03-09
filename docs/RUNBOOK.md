@@ -11,10 +11,10 @@ pytest -q
 python -m src.cli validate-config --target stm32f3
 ```
 
-현재 소프트웨어 기준선(2026-03-07):
+현재 소프트웨어 기준선(2026-03-09):
 - `ruff check src tests` ✅
 - `mypy src` ✅
-- `pytest -q` ✅ (`113 passed, 3 skipped`)
+- `pytest -q` ✅ (`127 passed`)
 
 ## 1) 사전 검증
 ```bash
@@ -44,6 +44,13 @@ python -m src.cli setup-hardware --target stm32f3 --serial-port /dev/ttyUSB0 --f
 ### 진단
 ```bash
 python -m src.cli doctor-hardware --target stm32f3
+```
+
+### ChipWhisperer 감지/설정
+```bash
+python -m src.cli detect-hardware --hardware chipwhisperer-hardware --target stm32f3
+python -m src.cli setup-hardware --hardware chipwhisperer-hardware --target stm32f3 --force
+python -m src.cli doctor-hardware --hardware chipwhisperer-hardware --target stm32f3
 ```
 
 기본 로컬 바인딩 파일:
@@ -88,6 +95,37 @@ python -m src.cli hil-preflight \
 ```bash
 python -m src.cli run --target stm32f3 --require-preflight --trials 300
 ```
+
+### ChipWhisperer + target UART 실행
+```bash
+python -m src.cli run \
+  --hardware chipwhisperer-hardware \
+  --target stm32f3 \
+  --serial-port /dev/ttyUSB0 \
+  --trials 300
+```
+
+이 모드에서 `--serial-port`는 ChipWhisperer 디바이스가 아니라 **target UART 포트**다.
+
+## 4.1) backend benchmark
+```bash
+python -m src.cli benchmark \
+  --target stm32f3 \
+  --algorithms bayesian,rl \
+  --backends mock,chipwhisperer-hardware \
+  --runs 3 \
+  --trials 100 \
+  --benchmark-id bm_stm32f3_backend_compare_v1 \
+  --benchmark-task det_fault \
+  --operator rootk1m \
+  --board-id board_a \
+  --session-id 2026-03-09
+```
+
+산출물:
+- `benchmark_*.json`
+- `comparison_*.json`
+- 각 run의 artifact bundle
 
 ### RC 최종 검증 워크플로우
 ```bash
@@ -189,12 +227,16 @@ python -m src.cli replay \
 - Eval suite report: `experiments/results/eval_suite_*.json`
 - Queue summary: `experiments/results/queue_*.json`
 - Soak summary: `experiments/results/soak_*.json`
+- Benchmark report: `experiments/results/benchmark_*.json`
+- Comparison report: `experiments/results/comparison_*.json`
 - HIL preflight summary: `experiments/results/hil_preflight_*.json`
 - RC HIL validation summary: `experiments/results/hil_rc_validation_*.json`
 - Agentic trace: `experiments/results/agentic_trace_*.jsonl`
 - Knowledge store(default): `data/knowledge/kb.jsonl`
+- Artifact bundle: `experiments/results/bundles/<benchmark_id>/<target>/<backend>/<run_id>/`
 
 `campaign summary / manifest / RL report / eval-suite / knowledge query` 출력은 `src/types.py`의 typed payload 계약에 맞춰 생성된다.
+각 run summary는 `artifact_bundle`, `bundle_manifest`, `time_to_first_valid_fault`를 포함할 수 있다.
 
 ## 10) 권장 체크리스트
 1. `validate-config`

@@ -1,4 +1,5 @@
 """테스트/로컬 실행용 mock hardware."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -32,7 +33,6 @@ class MockHardware(BaseHardwareAdapter):
 
     def get_capabilities(self) -> list[str]:
         return ["simulation", "glitch.execute"]
-
 
     def execute(self, params: GlitchParameters) -> RawResult:
         score = self._fault_score(params)
@@ -77,8 +77,5 @@ class MockHardware(BaseHardwareAdapter):
         repeat_norm = max(0.0, min(1.0, params.repeat / 10.0))
 
         return float(
-            0.35 * width_norm
-            + 0.35 * offset_norm
-            + 0.2 * voltage_norm
-            + 0.1 * repeat_norm
+            0.35 * width_norm + 0.35 * offset_norm + 0.2 * voltage_norm + 0.1 * repeat_norm
         )

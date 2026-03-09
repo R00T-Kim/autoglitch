@@ -1,4 +1,5 @@
 """Retry and circuit-breaker execution utilities."""
+
 from __future__ import annotations
 
 import random
@@ -42,9 +43,7 @@ class CircuitBreaker:
             self.state = "half_open"
             return
 
-        raise CircuitOpenError(
-            f"circuit open; retry in {self.recovery_timeout_s - elapsed:.2f}s"
-        )
+        raise CircuitOpenError(f"circuit open; retry in {self.recovery_timeout_s - elapsed:.2f}s")
 
     def on_success(self) -> None:
         self.state = "closed"

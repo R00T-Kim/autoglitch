@@ -114,15 +114,27 @@ def test_validate_hil_rc_command_emits_ready_report(monkeypatch, capsys, tmp_pat
         },
     )
     monkeypatch.setattr("src.cli_validation._run_queue_guard_drill", lambda **kwargs: {"ok": True})
-    monkeypatch.setattr("src.cli_validation._run_binding_lock_drill", lambda selected_binding: {"ok": True})
-    monkeypatch.setattr("src.cli_validation._run_stale_binding_drill", lambda **kwargs: {"ok": True})
+    monkeypatch.setattr(
+        "src.cli_validation._run_binding_lock_drill", lambda selected_binding: {"ok": True}
+    )
+    monkeypatch.setattr(
+        "src.cli_validation._run_stale_binding_drill", lambda **kwargs: {"ok": True}
+    )
     monkeypatch.setattr(
         "src.cli_validation._run_soak_resume_drill",
-        lambda **kwargs: {"ok": True, "first": {"completed_batches": 1}, "resume": {"completed_batches": 2}},
+        lambda **kwargs: {
+            "ok": True,
+            "first": {"completed_batches": 1},
+            "resume": {"completed_batches": 2},
+        },
     )
     monkeypatch.setattr(
         "src.cli_validation._run_legacy_smoke",
-        lambda **kwargs: {"ok": True, "preflight": {"valid": True}, "run": {"report": "legacy.json"}},
+        lambda **kwargs: {
+            "ok": True,
+            "preflight": {"valid": True},
+            "run": {"report": "legacy.json"},
+        },
     )
 
     validate_hil_rc_command(
@@ -166,19 +178,42 @@ def test_validate_hil_rc_command_requires_manual_confirmation(monkeypatch, tmp_p
             "doctor": {"status": "ok", "findings": [], "healthcheck": {"ok": True}},
         },
     )
-    monkeypatch.setattr("src.cli_validation._run_primary_preflight", lambda **kwargs: {"valid": True})
+    monkeypatch.setattr(
+        "src.cli_validation._run_primary_preflight", lambda **kwargs: {"valid": True}
+    )
     monkeypatch.setattr(
         "src.cli_validation._run_campaign_stage",
         lambda **kwargs: {
             "trials": kwargs["trials"],
             "seeds": list(kwargs["seeds"]),
-            "runs": [{"n_trials": kwargs["trials"], "success_rate": 0.4, "primitive_repro_rate": 0.3, "latency_p95_seconds": 0.2, "throughput_trials_per_second": 10.0, "runtime_failure_ratio": 0.0, "error_breakdown": {}}],
-            "aggregate": {"count": 1, "success_rate_mean": 0.4, "primitive_repro_rate_mean": 0.3, "latency_p95_max": 0.2, "throughput_mean": 10.0, "runtime_failure_ratio": 0.0},
+            "runs": [
+                {
+                    "n_trials": kwargs["trials"],
+                    "success_rate": 0.4,
+                    "primitive_repro_rate": 0.3,
+                    "latency_p95_seconds": 0.2,
+                    "throughput_trials_per_second": 10.0,
+                    "runtime_failure_ratio": 0.0,
+                    "error_breakdown": {},
+                }
+            ],
+            "aggregate": {
+                "count": 1,
+                "success_rate_mean": 0.4,
+                "primitive_repro_rate_mean": 0.3,
+                "latency_p95_max": 0.2,
+                "throughput_mean": 10.0,
+                "runtime_failure_ratio": 0.0,
+            },
         },
     )
     monkeypatch.setattr("src.cli_validation._run_queue_guard_drill", lambda **kwargs: {"ok": True})
-    monkeypatch.setattr("src.cli_validation._run_binding_lock_drill", lambda selected_binding: {"ok": True})
-    monkeypatch.setattr("src.cli_validation._run_stale_binding_drill", lambda **kwargs: {"ok": True})
+    monkeypatch.setattr(
+        "src.cli_validation._run_binding_lock_drill", lambda selected_binding: {"ok": True}
+    )
+    monkeypatch.setattr(
+        "src.cli_validation._run_stale_binding_drill", lambda **kwargs: {"ok": True}
+    )
     monkeypatch.setattr("src.cli_validation._run_soak_resume_drill", lambda **kwargs: {"ok": True})
     monkeypatch.setattr("src.cli_validation._run_legacy_smoke", lambda **kwargs: {"ok": True})
 

@@ -63,6 +63,8 @@ class AgenticSummaryPayload(TypedDict):
     event_count: int
     policy_reject_count: int
     agentic_interventions: int
+    planner_backend: str
+    advisor_backend: str
 
 
 class TrainingSummaryPayload(TypedDict):
@@ -79,10 +81,14 @@ class CampaignSummaryPayload(TypedDict):
     n_trials: int
     success_rate: float
     primitive_repro_rate: float
+    time_to_first_valid_fault: int | None
     time_to_first_primitive: int | None
     runtime: RuntimeSummaryPayload
     latency: LatencySummaryPayload
     error_breakdown: dict[str, int]
+    execution_status_breakdown: dict[str, int]
+    infra_failure_count: int
+    blocked_count: int
     fault_distribution: dict[str, int]
     primitive_distribution: dict[str, int]
     pareto_front: list[dict[str, Any]]
@@ -94,6 +100,10 @@ class CampaignSummaryPayload(TypedDict):
     training: TrainingSummaryPayload
     optimizer_runtime: dict[str, Any]
     mlflow: dict[str, Any]
+    component_plugins: dict[str, str]
+    artifact_bundle: str | None
+    bundle_manifest: str | None
+    benchmark: dict[str, Any]
 
 
 class RunManifestPayload(TypedDict):
@@ -107,6 +117,48 @@ class RunManifestPayload(TypedDict):
     target: dict[str, Any]
     optimizer: dict[str, Any]
     plugins: list[dict[str, Any]]
+
+
+class ArtifactBundlePayload(TypedDict):
+    schema_version: int
+    created_at: str
+    run_id: str
+    bundle_dir: str
+    manifest: str
+    completeness: dict[str, bool]
+    files: dict[str, str]
+
+
+class BenchmarkSummaryPayload(TypedDict):
+    schema_version: int
+    created_at: str
+    benchmark_id: str
+    task: str
+    target: str
+    run_tag: str | None
+    ai_mode: str
+    objective_mode: str
+    algorithms: list[str]
+    backends: list[str]
+    runs_per_cell: int
+    trials_per_run: int
+    lab: dict[str, Any]
+    results: dict[str, dict[str, list[dict[str, Any]]]]
+    aggregate: dict[str, dict[str, dict[str, Any]]]
+
+
+class CompareReportPayload(TypedDict):
+    schema_version: int
+    created_at: str
+    benchmark_id: str
+    target: str
+    task: str
+    run_tag: str | None
+    backends: list[str]
+    algorithms: list[str]
+    aggregate: dict[str, dict[str, dict[str, Any]]]
+    overall_winner: dict[str, Any]
+    cells: list[dict[str, Any]]
 
 
 class RLEvaluationPayload(TypedDict):
@@ -188,6 +240,19 @@ class KnowledgeQueryPayload(TypedDict):
 
 
 @dataclass
+class ExecutionMetadata:
+    """Structured execution result metadata for one trial."""
+
+    status: str = "ok"
+    origin: str = "hardware"
+    attempts: int = 1
+    recovered: bool = False
+    circuit_state_after: str = "disabled"
+    error_type: str | None = None
+    error_message: str | None = None
+
+
+@dataclass
 class GlitchParameters:
     """글리치 파라미터"""
 
@@ -255,6 +320,7 @@ class TrialResult:
     observation: Observation
     fault_class: FaultClass
     primitive: ExploitPrimitive
+    execution: ExecutionMetadata = field(default_factory=ExecutionMetadata)
     timestamp: datetime = field(default_factory=datetime.now)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -350,7 +416,8 @@ class CampaignResult:
         successes = sum(
             1
             for t in self.trials
-            if t.fault_class not in (FaultClass.NORMAL, FaultClass.RESET, FaultClass.UNKNOWN)
+            if t.execution.status == "ok"
+            and t.fault_class not in (FaultClass.NORMAL, FaultClass.RESET, FaultClass.UNKNOWN)
         )
         return successes / len(self.trials)
 
@@ -391,6 +458,17 @@ class CampaignResult:
 
         max_hits = max(primitive_dist.values())
         return max_hits / len(self.trials)
+
+    @property
+    def time_to_first_valid_fault(self) -> int | None:
+        """첫 유효 fault 관측 trial id, 없으면 None."""
+        for trial in self.trials:
+            if trial.execution.status != "ok":
+                continue
+            if trial.fault_class in (FaultClass.NORMAL, FaultClass.RESET, FaultClass.UNKNOWN):
+                continue
+            return trial.trial_id
+        return None
 
     @property
     def runtime_total_seconds(self) -> float:
@@ -494,6 +572,22 @@ class CampaignResult:
                 category = str(trial.metadata.get("error_category", "none"))
             dist[category] = dist.get(category, 0) + 1
         return dist
+
+    @property
+    def execution_status_breakdown(self) -> dict[str, int]:
+        dist: dict[str, int] = {}
+        for trial in self.trials:
+            status = str(getattr(trial.execution, "status", "ok"))
+            dist[status] = dist.get(status, 0) + 1
+        return dist
+
+    @property
+    def infra_failure_count(self) -> int:
+        return self.execution_status_breakdown.get("infra_failure", 0)
+
+    @property
+    def blocked_count(self) -> int:
+        return self.execution_status_breakdown.get("blocked", 0)
 
     @staticmethod
     def _trial_signal_score(trial: TrialResult) -> float:

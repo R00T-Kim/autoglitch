@@ -1,4 +1,5 @@
 """Agentic campaign helpers extracted from the CLI module."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -33,7 +34,9 @@ def _run_campaign_agentic(
         max_actions_per_cycle=int(ai_cfg.get("max_actions_per_cycle", 3)),
     )
     policy = PolicyEngine.from_sources(
-        config_policy=run_config.get("policy", {}) if isinstance(run_config.get("policy", {}), dict) else {},
+        config_policy=run_config.get("policy", {})
+        if isinstance(run_config.get("policy", {}), dict)
+        else {},
         policy_file=policy_file,
         ai_limits=ai_cfg,
     )
@@ -143,9 +146,7 @@ def _build_context_snapshot(
 
     total = float(len(trials))
     success_count = sum(
-        1
-        for trial in trials
-        if trial.fault_class.name not in {"NORMAL", "RESET", "UNKNOWN"}
+        1 for trial in trials if trial.fault_class.name not in {"NORMAL", "RESET", "UNKNOWN"}
     )
     primitive_count = sum(1 for trial in trials if trial.primitive.type.name != "NONE")
     timeout_count = sum(1 for trial in trials if not trial.observation.raw.serial_output)

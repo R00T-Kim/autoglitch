@@ -1,4 +1,5 @@
 """Policy engine for validating planner proposals."""
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -35,7 +36,9 @@ class ValidatedChangeSet(dict[str, Any]):
 
 FIELD_POLICY_SPECS: tuple[FieldPolicySpec, ...] = (
     FieldPolicySpec("optimizer.bo.candidate_pool_size", "int", effect="live"),
-    FieldPolicySpec("optimizer.bo.objective_mode", "str", effect="live", choices=("single", "multi")),
+    FieldPolicySpec(
+        "optimizer.bo.objective_mode", "str", effect="live", choices=("single", "multi")
+    ),
     FieldPolicySpec("optimizer.bo.multi_objective_weights.*", "float", effect="live"),
     FieldPolicySpec("optimizer.bo.vectorized_heuristic", "bool", effect="live"),
     FieldPolicySpec("optimizer.rl.train_interval", "int", effect="live"),
@@ -82,9 +85,13 @@ class PolicyEngine:
             allowed_fields=list(policy_payload.get("allowed_fields", _default_allowed_fields())),
             hard_limits=dict(policy_payload.get("hard_limits", {})),
             reject_on_unknown_field=bool(policy_payload.get("reject_on_unknown_field", True)),
-            max_patch_delta=float(ai_limits.get("max_patch_delta", policy_payload.get("max_patch_delta", 0.5))),
+            max_patch_delta=float(
+                ai_limits.get("max_patch_delta", policy_payload.get("max_patch_delta", 0.5))
+            ),
             max_actions_per_cycle=int(
-                ai_limits.get("max_actions_per_cycle", policy_payload.get("max_actions_per_cycle", 3))
+                ai_limits.get(
+                    "max_actions_per_cycle", policy_payload.get("max_actions_per_cycle", 3)
+                )
             ),
         )
         return cls(ruleset=ruleset)

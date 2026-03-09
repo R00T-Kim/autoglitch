@@ -1,4 +1,5 @@
 """Hardware resolution and discovery filtering helpers."""
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -26,9 +27,13 @@ from ._framework_models import (
 )
 
 
-def candidate_serial_ports(config: dict[str, Any], *, include: list[str] | tuple[str, ...] = ()) -> list[str]:
+def candidate_serial_ports(
+    config: dict[str, Any], *, include: list[str] | tuple[str, ...] = ()
+) -> list[str]:
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
-    discovery_cfg = hw_cfg.get("discovery", {}) if isinstance(hw_cfg.get("discovery", {}), dict) else {}
+    discovery_cfg = (
+        hw_cfg.get("discovery", {}) if isinstance(hw_cfg.get("discovery", {}), dict) else {}
+    )
     target_cfg = hw_cfg.get("target", {}) if isinstance(hw_cfg.get("target", {}), dict) else {}
 
     ports: list[str] = []
@@ -74,7 +79,9 @@ def resolve_hardware(
 ) -> HardwareResolution:
     registry = registry or build_default_registry(_profile_dirs_from_config(config))
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
-    target_name = str(config.get("target", {}).get("name", hw_cfg.get("target", {}).get("type", "")))
+    target_name = str(
+        config.get("target", {}).get("name", hw_cfg.get("target", {}).get("type", ""))
+    )
     adapter_raw = hw_cfg.get("adapter")
     if str(adapter_raw or "").lower() in {"", "auto", "none"}:
         adapter_raw = hw_cfg.get("mode")
@@ -115,7 +122,9 @@ def resolve_hardware(
         unique = _unique_high_confidence_match(detected)
         if unique is not None:
             validate_required_capabilities(binding=unique.binding, config=config, registry=registry)
-            return HardwareResolution(selected=unique.binding, candidates=detected, source="explicit-port")
+            return HardwareResolution(
+                selected=unique.binding, candidates=detected, source="explicit-port"
+            )
         if requested is not None:
             definition = registry.get(requested)
             if definition is None:
@@ -147,12 +156,15 @@ def resolve_hardware(
         unique = _unique_high_confidence_match(detected)
         if unique is not None:
             validate_required_capabilities(binding=unique.binding, config=config, registry=registry)
-            return HardwareResolution(selected=unique.binding, candidates=detected, source="auto-detect")
+            return HardwareResolution(
+                selected=unique.binding, candidates=detected, source="auto-detect"
+            )
         if requested is not None and not detected:
             raise HardwareResolutionError(f"requested hardware adapter not detected: {requested}")
         if len(detected) > 1:
             rendered = ", ".join(
-                f"{item.profile.adapter_id}@{item.binding.location}({item.confidence:.2f})" for item in detected[:5]
+                f"{item.profile.adapter_id}@{item.binding.location}({item.confidence:.2f})"
+                for item in detected[:5]
             )
             raise HardwareResolutionError(
                 f"ambiguous hardware detection; multiple matches found: {rendered}"
@@ -208,9 +220,13 @@ def detect_hardware(
         adapter_raw = hw_cfg.get("mode")
     config_requested = normalize_adapter_request(adapter_raw)
     preferred_requested = normalize_adapter_request(hw_cfg.get("preferred_adapter"))
-    requested = normalize_adapter_request(explicit_adapter) or config_requested or preferred_requested
+    requested = (
+        normalize_adapter_request(explicit_adapter) or config_requested or preferred_requested
+    )
     detected = registry.detect(
-        candidate_ports=candidate_serial_ports(config, include=[explicit_port] if explicit_port else []),
+        candidate_ports=candidate_serial_ports(
+            config, include=[explicit_port] if explicit_port else []
+        ),
         config=config,
         target_name=target_name,
         preferred_adapter=requested,
@@ -232,6 +248,9 @@ def _unique_high_confidence_match(candidates: list[DetectedHardware]) -> Detecte
     if len(candidates) == 1:
         return best
     second = candidates[1]
-    if abs(best.confidence - second.confidence) < 0.05 and best.binding.location != second.binding.location:
+    if (
+        abs(best.confidence - second.confidence) < 0.05
+        and best.binding.location != second.binding.location
+    ):
         return None
     return best

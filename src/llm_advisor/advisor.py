@@ -1,4 +1,5 @@
 """LLM 기반 실험 자문 모듈 (휴리스틱 fallback 포함)."""
+
 from __future__ import annotations
 
 import logging
@@ -47,7 +48,9 @@ class LLMAdvisor:
         }
 
         if history:
-            top_trials = sorted(history, key=lambda trial: trial.primitive.confidence, reverse=True)[:10]
+            top_trials = sorted(
+                history, key=lambda trial: trial.primitive.confidence, reverse=True
+            )[:10]
             if top_trials:
                 widths = [t.parameters.width for t in top_trials]
                 offsets = [t.parameters.offset for t in top_trials]

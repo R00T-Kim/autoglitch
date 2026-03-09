@@ -23,11 +23,13 @@ def _binding_args(tmp_path: Path, command: str) -> list[str]:
 def test_detect_hardware_command_prints_candidates(monkeypatch, capsys, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
-        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
-            "confidence": 0.99,
-            "reason": "typed_protocol_handshake_ok",
-            "identity": {"port": port},
-        }),
+        classmethod(
+            lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
+                "confidence": 0.99,
+                "reason": "typed_protocol_handshake_ok",
+                "identity": {"port": port},
+            }
+        ),
     )
     monkeypatch.setattr(
         "src.hardware.serial_hardware.SerialCommandHardware.probe",
@@ -35,8 +37,14 @@ def test_detect_hardware_command_prints_candidates(monkeypatch, capsys, tmp_path
     )
 
     import sys
+
     argv = sys.argv
-    sys.argv = ["autoglitch", *_binding_args(tmp_path, "detect-hardware"), "--serial-port", "/dev/ttyUSB_FAKE"]
+    sys.argv = [
+        "autoglitch",
+        *_binding_args(tmp_path, "detect-hardware"),
+        "--serial-port",
+        "/dev/ttyUSB_FAKE",
+    ]
     try:
         cli.main()
     finally:
@@ -45,7 +53,8 @@ def test_detect_hardware_command_prints_candidates(monkeypatch, capsys, tmp_path
     payload = json.loads(capsys.readouterr().out)
     assert payload["detected"] >= 1
     assert any(
-        item["adapter_id"] == "serial-json-hardware" and item["binding"]["location"] == "/dev/ttyUSB_FAKE"
+        item["adapter_id"] == "serial-json-hardware"
+        and item["binding"]["location"] == "/dev/ttyUSB_FAKE"
         for item in payload["candidates"]
     )
 
@@ -53,11 +62,13 @@ def test_detect_hardware_command_prints_candidates(monkeypatch, capsys, tmp_path
 def test_setup_hardware_command_writes_binding(monkeypatch, capsys, tmp_path: Path) -> None:
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
-        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
-            "confidence": 0.99,
-            "reason": "typed_protocol_handshake_ok",
-            "identity": {"port": port},
-        }),
+        classmethod(
+            lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
+                "confidence": 0.99,
+                "reason": "typed_protocol_handshake_ok",
+                "identity": {"port": port},
+            }
+        ),
     )
     monkeypatch.setattr(
         "src.hardware.serial_hardware.SerialCommandHardware.probe",
@@ -65,6 +76,7 @@ def test_setup_hardware_command_writes_binding(monkeypatch, capsys, tmp_path: Pa
     )
 
     import sys
+
     argv = sys.argv
     binding_file = tmp_path / "hardware.yaml"
     sys.argv = [
@@ -85,7 +97,9 @@ def test_setup_hardware_command_writes_binding(monkeypatch, capsys, tmp_path: Pa
     assert saved["binding"]["location"] == "/dev/ttyUSB_FAKE"
 
 
-def test_doctor_hardware_exits_nonzero_when_not_detected(monkeypatch, tmp_path: Path, capsys) -> None:
+def test_doctor_hardware_exits_nonzero_when_not_detected(
+    monkeypatch, tmp_path: Path, capsys
+) -> None:
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
         classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: None),  # noqa: ARG005
@@ -96,8 +110,14 @@ def test_doctor_hardware_exits_nonzero_when_not_detected(monkeypatch, tmp_path: 
     )
 
     import sys
+
     argv = sys.argv
-    sys.argv = ["autoglitch", *_binding_args(tmp_path, "doctor-hardware"), "--serial-port", "/dev/ttyUSB_FAKE"]
+    sys.argv = [
+        "autoglitch",
+        *_binding_args(tmp_path, "doctor-hardware"),
+        "--serial-port",
+        "/dev/ttyUSB_FAKE",
+    ]
     try:
         try:
             cli.main()

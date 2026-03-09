@@ -88,7 +88,9 @@ def test_queue_run_respects_priority_and_writes_checkpoint(tmp_path, monkeypatch
         return {"ok": True, "target": args.target}
 
     monkeypatch.setattr(cli, "_execute_campaign", _fake_execute_campaign)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     args = argparse.Namespace(
         queue=str(queue_file),
@@ -155,7 +157,9 @@ def test_queue_run_resume_skips_completed_jobs(tmp_path, monkeypatch, capsys) ->
         raise AssertionError("resume mode should skip completed jobs")
 
     monkeypatch.setattr(cli, "_execute_campaign", _should_not_run)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     args = argparse.Namespace(
         queue=str(queue_file),
@@ -233,7 +237,9 @@ def test_soak_run_resume_skips_executed_batches(tmp_path, monkeypatch, capsys) -
         }
 
     monkeypatch.setattr(cli, "_execute_campaign", _fake_execute_campaign)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     first_args = _soak_args(tmp_path, resume=False)
     _soak_run(first_args)
@@ -275,7 +281,9 @@ def test_soak_run_continue_on_error_records_failed_batch(tmp_path, monkeypatch, 
         }
 
     monkeypatch.setattr(cli, "_execute_campaign", _maybe_fail)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     args = _soak_args(tmp_path, continue_on_error=True)
     _soak_run(args)
@@ -312,7 +320,9 @@ def test_queue_run_parallel_workers(tmp_path, monkeypatch, capsys) -> None:
         return {"ok": True, "target": args.target}
 
     monkeypatch.setattr(cli, "_execute_campaign", _fake_execute_campaign)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     args = argparse.Namespace(
         queue=str(queue_file),
@@ -432,7 +442,9 @@ def test_soak_run_parallel_workers(tmp_path, monkeypatch, capsys) -> None:
         }
 
     monkeypatch.setattr(cli, "_execute_campaign", _fake_execute_campaign)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     args = _soak_args(tmp_path, max_workers=2, continue_on_error=True, max_batches=4)
     _soak_run(args)
@@ -494,7 +506,9 @@ def test_soak_run_require_preflight_executes_once(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(cli, "_load_run_config", lambda _args: ({}, None))
     monkeypatch.setattr(cli, "_validate_runtime_config", lambda _cfg, mode="strict": [])
     monkeypatch.setattr(cli, "_execute_campaign", _fake_execute_campaign)
-    monkeypatch.setattr(cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json")
+    monkeypatch.setattr(
+        cli, "_write_json_report", lambda prefix, payload: tmp_path / f"{prefix}.json"
+    )
 
     args = _soak_args(tmp_path, require_preflight=True, max_batches=2)
     _soak_run(args)

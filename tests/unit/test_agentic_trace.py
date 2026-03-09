@@ -13,7 +13,10 @@ class _Optimizer:
 
 def test_apply_policy_patch_returns_effect_and_apply_metadata() -> None:
     optimizer = _Optimizer()
-    config = {"optimizer": {"bo": {"candidate_pool_size": 192}}, "experiment": {"success_threshold": 0.3}}
+    config = {
+        "optimizer": {"bo": {"candidate_pool_size": 192}},
+        "experiment": {"success_threshold": 0.3},
+    }
 
     patch_meta = apply_policy_patch(
         config=config,
@@ -39,7 +42,10 @@ def test_apply_policy_patch_returns_effect_and_apply_metadata() -> None:
 
 def test_decision_trace_store_includes_validation_and_apply_metadata() -> None:
     optimizer = _Optimizer()
-    config = {"optimizer": {"bo": {"candidate_pool_size": 192}}, "experiment": {"success_threshold": 0.3}}
+    config = {
+        "optimizer": {"bo": {"candidate_pool_size": 192}},
+        "experiment": {"success_threshold": 0.3},
+    }
     proposal = PlannerProposal(
         proposal_id="proposal-1",
         mode="agentic_enforced",

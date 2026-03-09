@@ -4,6 +4,7 @@ This module keeps AUTOGLITCH runtime deterministic while exposing an SB3-shaped
 interface for train/eval/checkpoint workflows. If SB3 is not available,
 execution transparently falls back to RL-lite logic.
 """
+
 from __future__ import annotations
 
 import json
@@ -84,7 +85,9 @@ class SB3Optimizer(BaseOptimizer):
             "eval_interval": self.eval_interval,
             "checkpoint_interval": self.checkpoint_interval,
             "save_best_only": self.save_best_only,
-            "best_eval_score": self._best_eval_score if self._best_eval_score != float("-inf") else None,
+            "best_eval_score": self._best_eval_score
+            if self._best_eval_score != float("-inf")
+            else None,
             "last_checkpoint_path": self._last_checkpoint_path,
         }
 
@@ -189,7 +192,9 @@ class SB3Optimizer(BaseOptimizer):
             "checkpoint_interval": self.checkpoint_interval,
             "warmup_steps": self.warmup_steps,
             "save_best_only": self.save_best_only,
-            "best_eval_score": self._best_eval_score if self._best_eval_score != float("-inf") else None,
+            "best_eval_score": self._best_eval_score
+            if self._best_eval_score != float("-inf")
+            else None,
             "reward_stats": {
                 "count": len(self._reward_history),
                 "mean": float(mean(self._reward_history)) if self._reward_history else 0.0,
@@ -221,7 +226,9 @@ class SB3Optimizer(BaseOptimizer):
         self._observed_steps = int(payload.get("observed_steps", 0))
         self._last_checkpoint_step = self._observed_steps
         best_eval = payload.get("best_eval_score")
-        self._best_eval_score = float(best_eval) if isinstance(best_eval, float | int) else float("-inf")
+        self._best_eval_score = (
+            float(best_eval) if isinstance(best_eval, float | int) else float("-inf")
+        )
         self._last_checkpoint_path = str(checkpoint_path)
         self._train_or_fallback()
         return payload

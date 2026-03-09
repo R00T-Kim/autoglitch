@@ -1,7 +1,9 @@
 """Plugin registry and manifest loader."""
+
 from __future__ import annotations
 
 import builtins
+import importlib
 from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -54,6 +56,32 @@ class PluginRegistry:
     def get(self, name: str) -> PluginManifest | None:
         return self._plugins.get(name)
 
+    def require(self, name: str, *, kind: str | None = None) -> PluginManifest:
+        manifest = self.get(name)
+        if manifest is None:
+            raise ValueError(f"unknown plugin manifest: {name}")
+        if kind is not None and manifest.kind != kind:
+            raise ValueError(f"plugin {name} has kind={manifest.kind}, expected {kind}")
+        return manifest
+
+    def load_class(self, name: str, *, kind: str | None = None) -> type[Any]:
+        manifest = self.require(name, kind=kind)
+        module = importlib.import_module(manifest.module)
+        cls = getattr(module, manifest.class_name, None)
+        if cls is None:
+            raise ValueError(
+                f"plugin {manifest.name} could not load {manifest.class_name} from {manifest.module}"
+            )
+        if not isinstance(cls, type):
+            raise ValueError(
+                f"plugin {manifest.name} resolved {manifest.class_name} from {manifest.module}, but it is not a class"
+            )
+        return cls
+
+    def instantiate(self, name: str, *, kind: str | None = None, **kwargs: Any) -> Any:
+        cls = self.load_class(name, kind=kind)
+        return cls(**kwargs)
+
     def snapshot(self) -> builtins.list[dict[str, Any]]:
         return [manifest.to_dict() for manifest in self.list()]
 
@@ -87,7 +115,6 @@ def _default_manifest_paths(extra_dirs: Iterable[Path] | None) -> list[Path]:
         unique_paths.append(path)
 
     return unique_paths
-
 
 
 def _load_manifest(path: Path) -> PluginManifest:

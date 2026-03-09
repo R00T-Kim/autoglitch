@@ -2,7 +2,7 @@
 
 외부 레퍼런스(공식 문서/공식 레포) 기반으로, 현재 코드베이스에서 **실제 효과가 큰 소프트웨어 개선 항목**을 우선순위로 정리했다.
 
-## 적용 현황 스냅샷 (2026-03-07)
+## 적용 현황 스냅샷 (2026-03-09)
 - ✅ Pydantic strict config 계층 적용
 - ✅ strict mode `config_version: 3` 고정 + `recovery`/`ext_offset` + hardware binding/discovery schema 확장
 - ✅ Serial async bridge + persistent/reconnect 적용
@@ -23,6 +23,10 @@
 - ✅ CLI leaf handler split(`cli_commands`, `cli_commands_rl`, `cli_commands_agentic`) 적용
 - ✅ hardware framework internal split + compatibility facade 적용
 - ✅ typed payload contracts(campaign/manifest/RL/eval-suite/knowledge) 적용
+- ✅ backend-aware benchmark(`backend × algorithm`) + compare report 적용
+- ✅ artifact bundle generator + bundle completeness 적용
+- ✅ `chipwhisperer-hardware` 첫 외부 USB backend 적용
+- ✅ benchmark/lab metadata strict schema 적용
 - ⏳ botorch-native TuRBO/qNEHVI 정교화는 다음 단계
 
 ## 1) 이미 회수한 Quick Wins
@@ -33,7 +37,7 @@
 
 ### B. 테스트 실행시간 단축
 - `pytest-xdist`(`pytest -n auto`) 도입은 여전히 유효하다.
-- 현재 테스트 수(2026-03-07 기준 `113 passed, 3 skipped`) 기준으로 CI 체감 개선 여지가 있다.
+- 현재 테스트 수(2026-03-09 기준 `127 passed`) 기준으로 CI 체감 개선 여지가 있다.
 
 ### C. 설정 검증 강도 상향
 - strict config / typed payload 기반선은 이미 들어갔다.
@@ -41,16 +45,21 @@
 
 ## 2) 다음 소프트웨어 우선순위 (실험 성능/재현성)
 
-### D. BO 고도화 (Botorch 권장 경로)
+### D. 실장비 benchmark/evidence 자동화 완성
+- 현재 benchmark schema / compare report / artifact bundle은 구현 완료다.
+- 다음 단계는 실제 실장비에서 day/board 반복을 자동 수행하고,
+  bundle을 논문용 결과표/plot로 바로 연결하는 것이다.
+
+### E. BO 고도화 (Botorch 권장 경로)
 - 고차원/국소 최적화 문제에 TuRBO 계열 추가.
 - 다중 목표(예: success_rate + 장비안전/속도)에서는 qNEHVI 계열 적용 검토.
 - 현재 heuristic/GP 2트랙 구조와 자연스럽게 병행 가능.
 
-### E. RL 학습 안정화
+### F. RL 학습 안정화
 - Stable-Baselines3의 `EvalCallback`, `CheckpointCallback`, `CallbackList`를 정식 파이프라인에 연결.
 - 벡터화 환경(`DummyVecEnv`/`SubprocVecEnv`)으로 학습 샘플 throughput 개선.
 
-### F. 실험 추적 고도화
+### G. 실험 추적 고도화
 - MLflow 3 Tracking API 기준으로:
   - nested run(캠페인/배치/trial)
   - dataset input logging
@@ -58,7 +67,11 @@
 
 ## 3) 장비 연동 소프트웨어 개선
 
-### G. Serial I/O 비동기화
+### H. ChipWhisperer 고급 경로 보강
+- 현재 `chipwhisperer-hardware`는 detect/setup/doctor/run/healthcheck 기준의 최소 통합을 완료했다.
+- 다음 단계는 target-specific trigger topology, capture semantics, Husky/Pro/Lite별 feature 차이를 메타데이터와 report에 더 반영하는 것이다.
+
+### I. Serial I/O 비동기화
 - 현재는 동기 `read_until` 기반.
 - pyserial-asyncio(공식 pyserial 팀, docs 마지막 업데이트 2021) 기반 비동기 브리지 옵션을 추가하면
   queue/soak 병렬 제어 시 호스트 블로킹을 줄일 수 있음.
@@ -66,18 +79,18 @@
 
 ## 4) 보안 스캔 체계
 
-### H. 코드 스캔 자동화
+### J. 코드 스캔 자동화
 - GitHub CodeQL default setup 활성화(공개 레포에서 빠르게 시작 가능).
 - Semgrep CI job 추가(정책/규칙 커스터마이징 용이).
 
 ---
 
 ## 제안 실행 순서 (추천)
-1. **RL callbacks + 벡터 환경**
-2. **TuRBO/qNEHVI 실험 브랜치**
-3. **MLflow nested/data lineage 정식화**
-4. **pytest-xdist + property-based test 확대**
-5. **실장비 RC evidence 수집 자동화 보조**
+1. **실장비 benchmark/evidence 자동화 완성**
+2. **ChipWhisperer 고급 trigger/capture 경로 보강**
+3. **RL callbacks + 벡터 환경**
+4. **TuRBO/qNEHVI 실험 브랜치**
+5. **MLflow nested/data lineage 정식화**
 
 ---
 

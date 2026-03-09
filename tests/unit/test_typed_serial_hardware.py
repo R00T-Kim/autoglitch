@@ -27,8 +27,17 @@ class FakeSerial:
 def test_typed_serial_hardware_executes_and_parses_result() -> None:
     fake = FakeSerial(
         [
-            json.dumps({"status": "ok", "serial_output": "AUTH BYPASS success", "reset_detected": False, "error_code": None}).encode() + b"\n",
-            json.dumps({"status": "ok", "capabilities": ["glitch.execute", "healthcheck"]}).encode() + b"\n",
+            json.dumps(
+                {
+                    "status": "ok",
+                    "serial_output": "AUTH BYPASS success",
+                    "reset_detected": False,
+                    "error_code": None,
+                }
+            ).encode()
+            + b"\n",
+            json.dumps({"status": "ok", "capabilities": ["glitch.execute", "healthcheck"]}).encode()
+            + b"\n",
         ]
     )
     hardware = TypedSerialCommandHardware(
@@ -60,7 +69,8 @@ def test_typed_serial_probe_recognizes_autoglitch_v1() -> None:
                     "capabilities": ["glitch.execute"],
                     "identity": {"model": "mock-bridge"},
                 }
-            ).encode() + b"\n"
+            ).encode()
+            + b"\n"
         ]
     )
 

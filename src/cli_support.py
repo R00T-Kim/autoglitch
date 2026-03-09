@@ -1,4 +1,5 @@
 """Shared helper functions for AUTOGLITCH CLI commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -57,6 +58,8 @@ def _resolve_effective_hardware_mode(
         return "mock"
     if cli_mode in {"serial-command-hardware", "serial-json-hardware"}:
         return "serial"
+    if cli_mode == "chipwhisperer-hardware":
+        return "usb"
 
     resolved_config = config
     if resolved_config is None:
@@ -90,6 +93,8 @@ def _resolve_effective_hardware_mode(
         return "mock"
     if adapter in {"serial-command-hardware", "serial-json-hardware"}:
         return "serial"
+    if adapter == "chipwhisperer-hardware":
+        return "usb"
 
     transport = str(hardware_cfg.get("transport", "")).lower()
     if transport:
@@ -127,7 +132,9 @@ def _deep_merge(base: dict[str, Any], overlay: dict[str, Any]) -> dict[str, Any]
     return merged
 
 
-def _build_run_namespace(options: dict[str, Any], cli_plugin_dirs: Iterable[str]) -> argparse.Namespace:
+def _build_run_namespace(
+    options: dict[str, Any], cli_plugin_dirs: Iterable[str]
+) -> argparse.Namespace:
     option_plugin_dirs = options.get("plugin_dir", [])
     if isinstance(option_plugin_dirs, str):
         option_plugin_dirs = [option_plugin_dirs]
@@ -156,6 +163,14 @@ def _build_run_namespace(options: dict[str, Any], cli_plugin_dirs: Iterable[str]
         fixed_seed=options.get("fixed_seed"),
         success_threshold=options.get("success_threshold"),
         run_tag=options.get("run_tag"),
+        benchmark_id=options.get("benchmark_id"),
+        benchmark_task=options.get("benchmark_task"),
+        operator=options.get("operator"),
+        board_id=options.get("board_id"),
+        session_id=options.get("session_id"),
+        wiring_profile=options.get("wiring_profile"),
+        board_prep_profile=options.get("board_prep_profile"),
+        power_profile=options.get("power_profile"),
         plugin_dir=[*list(cli_plugin_dirs), *list(option_plugin_dirs)],
     )
 
@@ -306,7 +321,9 @@ def _update_queue_checkpoint(
     checkpoint_data["updated_at"] = datetime.now().isoformat()
 
     checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint_file.write_text(json.dumps(checkpoint_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    checkpoint_file.write_text(
+        json.dumps(checkpoint_data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _is_serial_soak(args: argparse.Namespace) -> bool:
@@ -456,7 +473,9 @@ def _update_soak_checkpoint(
     checkpoint_data["updated_at"] = datetime.now().isoformat()
 
     checkpoint_file.parent.mkdir(parents=True, exist_ok=True)
-    checkpoint_file.write_text(json.dumps(checkpoint_data, indent=2, ensure_ascii=False), encoding="utf-8")
+    checkpoint_file.write_text(
+        json.dumps(checkpoint_data, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
 
 
 def _parse_primitive(value: str | None) -> ExploitPrimitiveType | None:
@@ -477,13 +496,54 @@ def _aggregate_rerun_results(
     success_threshold: float,
 ) -> dict[str, Any]:
     success_rates = [float(run["success_rate"]) for run in run_summaries] if run_summaries else []
-    repro_rates = [float(run["primitive_repro_rate"]) for run in run_summaries] if run_summaries else []
+    repro_rates = (
+        [float(run["primitive_repro_rate"]) for run in run_summaries] if run_summaries else []
+    )
+    valid_fault_trials: list[int] = [
+        int(value)
+        for value in (run.get("time_to_first_valid_fault") for run in run_summaries)
+        if value is not None
+    ]
 
     primitive_trials: list[int] = [
         int(value)
         for value in (run.get("time_to_first_primitive") for run in run_summaries)
         if value is not None
     ]
+    infra_failure_rates: list[float] = []
+    blocked_rates: list[float] = []
+    runtime_seconds: list[float] = []
+    primitive_distribution: dict[str, int] = {}
+    fault_distribution: dict[str, int] = {}
+    execution_status_distribution: dict[str, int] = {}
+    bundle_required_ok = 0
+    bundle_research_complete = 0
+    bundle_rc_complete = 0
+
+    for run in run_summaries:
+        n_trials = int(run.get("n_trials", 0) or 0)
+        if n_trials > 0:
+            infra_failure_rates.append(float(run.get("infra_failure_count", 0)) / n_trials)
+            blocked_rates.append(float(run.get("blocked_count", 0)) / n_trials)
+        runtime_seconds.append(float(run.get("runtime_total_seconds", 0.0)))
+        for source_key, accumulator in (
+            ("primitive_distribution", primitive_distribution),
+            ("fault_distribution", fault_distribution),
+            ("execution_status_breakdown", execution_status_distribution),
+        ):
+            source = run.get(source_key, {})
+            if not isinstance(source, dict):
+                continue
+            for key, value in source.items():
+                accumulator[str(key)] = accumulator.get(str(key), 0) + int(value)
+        bundle = run.get("artifact_bundle_status", {})
+        if isinstance(bundle, dict):
+            if bool(bundle.get("required_ok", False)):
+                bundle_required_ok += 1
+            if bool(bundle.get("research_complete", False)):
+                bundle_research_complete += 1
+            if bool(bundle.get("rc_complete", False)):
+                bundle_rc_complete += 1
 
     stable_hits = sum(1 for rate in repro_rates if rate >= success_threshold)
 
@@ -496,7 +556,17 @@ def _aggregate_rerun_results(
         "primitive_repro_rate_max": max(repro_rates) if repro_rates else 0.0,
         "stable_runs": stable_hits,
         "stable_run_ratio": (stable_hits / len(run_summaries)) if run_summaries else 0.0,
+        "time_to_first_valid_fault_best": min(valid_fault_trials) if valid_fault_trials else None,
         "time_to_first_primitive_best": min(primitive_trials) if primitive_trials else None,
+        "infra_failure_rate_mean": mean(infra_failure_rates) if infra_failure_rates else 0.0,
+        "blocked_rate_mean": mean(blocked_rates) if blocked_rates else 0.0,
+        "runtime_total_seconds_mean": mean(runtime_seconds) if runtime_seconds else 0.0,
+        "primitive_distribution": primitive_distribution,
+        "fault_distribution": fault_distribution,
+        "execution_status_breakdown": execution_status_distribution,
+        "bundle_required_ok_runs": bundle_required_ok,
+        "bundle_research_complete_runs": bundle_research_complete,
+        "bundle_rc_complete_runs": bundle_rc_complete,
     }
 
 
@@ -539,6 +609,9 @@ def summarize_trial_records(trials: list[dict[str, Any]]) -> dict[str, Any]:
             "success_rate": 0.0,
             "primitive_repro_rate": 0.0,
             "time_to_first_primitive": None,
+            "execution_status_breakdown": {},
+            "infra_failure_count": 0,
+            "blocked_count": 0,
             "fault_distribution": {},
             "primitive_distribution": {},
         }
@@ -546,14 +619,25 @@ def summarize_trial_records(trials: list[dict[str, Any]]) -> dict[str, Any]:
     success_faults = 0
     fault_dist: dict[str, int] = {}
     primitive_dist: dict[str, int] = {}
+    execution_status_dist: dict[str, int] = {}
     first_primitive_trial: int | None = None
+    first_valid_fault_trial: int | None = None
 
     for idx, trial in enumerate(trials, start=1):
+        execution = trial.get("execution", {})
+        execution_status = "ok"
+        if isinstance(execution, dict):
+            execution_status = str(execution.get("status", "ok"))
+        execution_status_dist[execution_status] = execution_status_dist.get(execution_status, 0) + 1
+
         fault = str(trial.get("fault_class", "UNKNOWN")).upper()
         fault_dist[fault] = fault_dist.get(fault, 0) + 1
 
-        if fault not in {"NORMAL", "RESET", "UNKNOWN"}:
+        if execution_status == "ok" and fault not in {"NORMAL", "RESET", "UNKNOWN"}:
             success_faults += 1
+            trial_id = int(trial.get("trial_id", idx))
+            if first_valid_fault_trial is None:
+                first_valid_fault_trial = trial_id
 
         primitive_value = trial.get("primitive", {})
         primitive_name = "NONE"
@@ -576,7 +660,11 @@ def summarize_trial_records(trials: list[dict[str, Any]]) -> dict[str, Any]:
         "n_trials": n_trials,
         "success_rate": success_faults / n_trials,
         "primitive_repro_rate": primitive_repro_rate,
+        "time_to_first_valid_fault": first_valid_fault_trial,
         "time_to_first_primitive": first_primitive_trial,
+        "execution_status_breakdown": execution_status_dist,
+        "infra_failure_count": execution_status_dist.get("infra_failure", 0),
+        "blocked_count": execution_status_dist.get("blocked", 0),
         "fault_distribution": fault_dist,
         "primitive_distribution": primitive_dist,
     }
@@ -584,7 +672,13 @@ def summarize_trial_records(trials: list[dict[str, Any]]) -> dict[str, Any]:
 
 def compare_summary_to_report(summary: dict[str, Any], report: dict[str, Any]) -> dict[str, Any]:
     checks = {}
-    for key in ("n_trials", "success_rate", "primitive_repro_rate", "time_to_first_primitive"):
+    for key in (
+        "n_trials",
+        "success_rate",
+        "primitive_repro_rate",
+        "time_to_first_valid_fault",
+        "time_to_first_primitive",
+    ):
         summary_value = summary.get(key)
         report_value = report.get(key)
         if isinstance(summary_value, float) and isinstance(report_value, float):
@@ -685,7 +779,9 @@ def _resolve_policy_file(args: argparse.Namespace, config: dict[str, Any]) -> st
     return None
 
 
-def _runtime_fingerprint(*, config_hash_payload: dict[str, Any], store_enabled: bool) -> dict[str, Any]:
+def _runtime_fingerprint(
+    *, config_hash_payload: dict[str, Any], store_enabled: bool
+) -> dict[str, Any]:
     config_json = json.dumps(config_hash_payload, sort_keys=True, ensure_ascii=False)
     payload: dict[str, Any] = {
         "enabled": bool(store_enabled),

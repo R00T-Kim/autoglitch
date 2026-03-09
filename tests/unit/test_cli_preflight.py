@@ -80,7 +80,9 @@ def test_run_hil_preflight_with_serial_mock_bridge(tmp_path) -> None:
         pytest.skip(f"PTY unavailable in environment: {exc}")
 
     stop_event = threading.Event()
-    thread = threading.Thread(target=bridge.serve_forever, kwargs={"stop_event": stop_event}, daemon=True)
+    thread = threading.Thread(
+        target=bridge.serve_forever, kwargs={"stop_event": stop_event}, daemon=True
+    )
     thread.start()
 
     try:

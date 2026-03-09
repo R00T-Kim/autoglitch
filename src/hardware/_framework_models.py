@@ -1,4 +1,5 @@
 """Core hardware registry, binding, and profile models."""
+
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable
@@ -177,7 +178,10 @@ class HardwareRegistry:
                 continue
             results.extend(definition.detect(profile, candidate_ports, config))
 
-        return sorted(results, key=lambda item: (-item.confidence, item.profile.adapter_id, item.binding.location))
+        return sorted(
+            results,
+            key=lambda item: (-item.confidence, item.profile.adapter_id, item.binding.location),
+        )
 
 
 class HardwareResolutionError(RuntimeError):
@@ -210,7 +214,9 @@ class HardwareBindingStore:
             metadata=dict(binding.get("metadata", {})),
         )
 
-    def save(self, binding: HardwareBinding, *, selected_from: str, candidates: list[DetectedHardware]) -> None:
+    def save(
+        self, binding: HardwareBinding, *, selected_from: str, candidates: list[DetectedHardware]
+    ) -> None:
         payload = {
             "schema_version": 1,
             "selected_from": selected_from,
@@ -239,8 +245,7 @@ def load_profiles(profile_dirs: Iterable[Path] | None = None) -> list[HardwarePr
     if profile_dirs:
         directories.extend(profile_dirs)
 
-    profiles: list[HardwareProfile] = []
-    seen: set[str] = set()
+    profiles_by_id: dict[str, HardwareProfile] = {}
     for directory in directories:
         if not directory.exists() or not directory.is_dir():
             continue
@@ -249,27 +254,71 @@ def load_profiles(profile_dirs: Iterable[Path] | None = None) -> list[HardwarePr
             if not isinstance(payload, dict):
                 continue
             adapter_id = str(payload.get("adapter_id", "")).strip()
-            if not adapter_id or adapter_id in seen:
+            if not adapter_id:
                 continue
-            seen.add(adapter_id)
-            profiles.append(
-                HardwareProfile(
-                    adapter_id=adapter_id,
-                    display_name=str(payload.get("display_name", adapter_id)),
-                    transport=str(payload.get("transport", "serial")),
-                    protocol=str(payload.get("protocol", "legacy-text")),
-                    supported_targets=tuple(str(item) for item in payload.get("supported_targets", ["*"])),
-                    capabilities=tuple(str(item) for item in payload.get("capabilities", [])),
-                    default_baudrate=int(payload.get("default_baudrate", 115200)),
-                    default_timeout_s=float(payload.get("default_timeout_s", 0.25)),
-                    max_confidence=float(payload.get("max_confidence", 0.99)),
-                    metadata=dict(payload.get("metadata", {})),
-                )
+            previous = profiles_by_id.get(adapter_id)
+            metadata = dict(previous.metadata) if previous is not None else {}
+            metadata.update(dict(payload.get("metadata", {})))
+            profiles_by_id[adapter_id] = HardwareProfile(
+                adapter_id=adapter_id,
+                display_name=str(
+                    payload.get(
+                        "display_name",
+                        previous.display_name if previous is not None else adapter_id,
+                    )
+                ),
+                transport=str(
+                    payload.get(
+                        "transport",
+                        previous.transport if previous is not None else "serial",
+                    )
+                ),
+                protocol=str(
+                    payload.get(
+                        "protocol",
+                        previous.protocol if previous is not None else "legacy-text",
+                    )
+                ),
+                supported_targets=tuple(
+                    str(item)
+                    for item in payload.get(
+                        "supported_targets",
+                        previous.supported_targets if previous is not None else ["*"],
+                    )
+                ),
+                capabilities=tuple(
+                    str(item)
+                    for item in payload.get(
+                        "capabilities",
+                        previous.capabilities if previous is not None else [],
+                    )
+                ),
+                default_baudrate=int(
+                    payload.get(
+                        "default_baudrate",
+                        previous.default_baudrate if previous is not None else 115200,
+                    )
+                ),
+                default_timeout_s=float(
+                    payload.get(
+                        "default_timeout_s",
+                        previous.default_timeout_s if previous is not None else 0.25,
+                    )
+                ),
+                max_confidence=float(
+                    payload.get(
+                        "max_confidence",
+                        previous.max_confidence if previous is not None else 0.99,
+                    )
+                ),
+                metadata=metadata,
             )
-    return profiles
+    return list(profiles_by_id.values())
 
 
-def binding_store_from_config(config: dict[str, Any], binding_file: str | None = None) -> HardwareBindingStore:
+def binding_store_from_config(
+    config: dict[str, Any], binding_file: str | None = None
+) -> HardwareBindingStore:
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
     path = Path(binding_file or hw_cfg.get("binding_file") or DEFAULT_BINDING_FILE)
     return HardwareBindingStore(path)

@@ -1,0 +1,21 @@
+adapter_id: chipwhisperer-hardware
+display_name: ChipWhisperer Scope
+transport: usb
+protocol: chipwhisperer
+supported_targets:
+  - stm32f303
+  - stm32f3
+  - stm32f1
+  - esp32
+  - nrf52
+  - '*'
+capabilities:
+  - glitch.execute
+  - glitch.configure
+  - healthcheck
+  - trigger.manual
+  - target.serial
+default_timeout_s: 0.25
+max_confidence: 0.97
+metadata:
+  vendor: newae

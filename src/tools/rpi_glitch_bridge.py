@@ -3,6 +3,7 @@
 This bridge receives AUTOGLITCH line protocol commands over a control serial port
 and translates them into GPIO pulses suitable for basic reset/trigger/crowbar control.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -45,7 +46,9 @@ class RPiGPIOBackend:
         self._gpio.setmode(self._gpio.BCM)
 
     def setup_output(self, pin: int, initial: bool) -> None:
-        self._gpio.setup(pin, self._gpio.OUT, initial=self._gpio.HIGH if initial else self._gpio.LOW)
+        self._gpio.setup(
+            pin, self._gpio.OUT, initial=self._gpio.HIGH if initial else self._gpio.LOW
+        )
 
     def setup_input(self, pin: int, pull_up: bool) -> None:
         pud = self._gpio.PUD_UP if pull_up else self._gpio.PUD_DOWN
@@ -163,12 +166,25 @@ class RPiGlitchController:
                     "adapter_id": "serial-json-hardware",
                     "transport": "serial",
                     "identity": {"model": "rpi-bridge", "control_port": self.config.control_port},
-                    "capabilities": ["glitch.execute", "target.reset", "target.trigger", "healthcheck"],
+                    "capabilities": [
+                        "glitch.execute",
+                        "target.reset",
+                        "target.trigger",
+                        "healthcheck",
+                    ],
                 }
             ).encode("utf-8")
         if command == "capabilities":
             return json.dumps(
-                {"status": "ok", "capabilities": ["glitch.execute", "target.reset", "target.trigger", "healthcheck"]}
+                {
+                    "status": "ok",
+                    "capabilities": [
+                        "glitch.execute",
+                        "target.reset",
+                        "target.trigger",
+                        "healthcheck",
+                    ],
+                }
             ).encode("utf-8")
         if command == "health":
             return json.dumps({"status": "ok", "ok": True}).encode("utf-8")
@@ -194,18 +210,26 @@ class RPiGlitchController:
             return json.dumps(
                 {
                     "status": "ok",
-                    "serial_output": target_line.decode("utf-8", errors="replace") if target_line else "glitch ok",
+                    "serial_output": target_line.decode("utf-8", errors="replace")
+                    if target_line
+                    else "glitch ok",
                     "reset_detected": False,
                     "error_code": None,
                 }
             ).encode("utf-8")
-        return json.dumps({"status": "error", "message": f"unknown command: {command}"}).encode("utf-8")
+        return json.dumps({"status": "error", "message": f"unknown command: {command}"}).encode(
+            "utf-8"
+        )
 
     def run_glitch(self, params: GlitchParameters) -> None:
         self.initialize()
         self._validate_params(params)
 
-        if self.config.wait_for_trigger and self.config.trigger_in_pin is not None and not self._wait_for_trigger():
+        if (
+            self.config.wait_for_trigger
+            and self.config.trigger_in_pin is not None
+            and not self._wait_for_trigger()
+        ):
             raise RuntimeError("trigger timeout")
 
         if params.offset > 0:
@@ -217,7 +241,9 @@ class RPiGlitchController:
             self._set_glitch(active=False)
 
             if idx < int(params.repeat) - 1:
-                gap_us = params.ext_offset if params.ext_offset > 0 else self.config.inter_pulse_gap_us
+                gap_us = (
+                    params.ext_offset if params.ext_offset > 0 else self.config.inter_pulse_gap_us
+                )
                 self.gpio.sleep(gap_us / 1_000_000.0)
 
     def reset_target(self) -> None:
@@ -284,9 +310,15 @@ def run_rpi_bridge(config: RPiBridgeConfig, *, gpio_backend: GPIOBackend | None 
     gpio = gpio_backend or RPiGPIOBackend()
     controller = RPiGlitchController(config=config, gpio_backend=gpio)
 
-    control = serial.Serial(config.control_port, config.control_baudrate, timeout=config.control_timeout_s)
+    control = serial.Serial(
+        config.control_port, config.control_baudrate, timeout=config.control_timeout_s
+    )
     target = (
-        serial.Serial(config.target_uart_port, config.target_uart_baudrate, timeout=config.target_uart_timeout_s)
+        serial.Serial(
+            config.target_uart_port,
+            config.target_uart_baudrate,
+            timeout=config.target_uart_timeout_s,
+        )
         if config.target_uart_port
         else None
     )
@@ -321,11 +353,19 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--control-port", required=True, help="control serial port (from host)")
     parser.add_argument("--control-baudrate", type=int, default=115200)
     parser.add_argument("--control-timeout-s", type=float, default=0.2)
-    parser.add_argument("--glitch-pin", type=int, default=18, help="BCM pin for glitch pulse output")
+    parser.add_argument(
+        "--glitch-pin", type=int, default=18, help="BCM pin for glitch pulse output"
+    )
     parser.add_argument("--reset-pin", type=int, default=23, help="BCM pin for reset pulse output")
-    parser.add_argument("--trigger-out-pin", type=int, default=24, help="BCM pin for manual trigger output")
-    parser.add_argument("--trigger-in-pin", type=int, default=None, help="BCM pin for trigger input")
-    parser.add_argument("--active-high", action="store_true", help="use active-high pulse (default: active-low)")
+    parser.add_argument(
+        "--trigger-out-pin", type=int, default=24, help="BCM pin for manual trigger output"
+    )
+    parser.add_argument(
+        "--trigger-in-pin", type=int, default=None, help="BCM pin for trigger input"
+    )
+    parser.add_argument(
+        "--active-high", action="store_true", help="use active-high pulse (default: active-low)"
+    )
     parser.add_argument("--reset-pulse-ms", type=float, default=20.0)
     parser.add_argument("--inter-pulse-gap-us", type=float, default=5.0)
     parser.add_argument("--wait-for-trigger", action="store_true")
@@ -333,7 +373,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-width-us", type=float, default=5000.0)
     parser.add_argument("--max-offset-us", type=float, default=5_000_000.0)
     parser.add_argument("--max-repeat", type=int, default=128)
-    parser.add_argument("--target-uart-port", default=None, help="optional target UART to echo line response")
+    parser.add_argument(
+        "--target-uart-port", default=None, help="optional target UART to echo line response"
+    )
     parser.add_argument("--target-uart-baudrate", type=int, default=115200)
     parser.add_argument("--target-uart-timeout-s", type=float, default=0.1)
     return parser

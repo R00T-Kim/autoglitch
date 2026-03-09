@@ -1,4 +1,5 @@
 """최적화기 기본 인터페이스"""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

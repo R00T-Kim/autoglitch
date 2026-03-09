@@ -1,4 +1,5 @@
 """Typed JSONL serial hardware adapter."""
+
 from __future__ import annotations
 
 import json

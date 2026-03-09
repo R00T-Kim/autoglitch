@@ -1,4 +1,5 @@
 """Async serial-based hardware adapter."""
+
 from __future__ import annotations
 
 import asyncio
@@ -175,7 +176,11 @@ class AsyncSerialCommandHardware(BaseHardwareAdapter):
 
         lowered = response.lower()
         reset_detected = (not response) or (b"reset" in lowered) or (b"reboot" in lowered)
-        error_code = 1 if any(token in lowered for token in (b"err", b"fault", b"exception", b"panic")) else None
+        error_code = (
+            1
+            if any(token in lowered for token in (b"err", b"fault", b"exception", b"panic"))
+            else None
+        )
 
         return RawResult(
             serial_output=response,
@@ -204,7 +209,9 @@ class AsyncSerialCommandHardware(BaseHardwareAdapter):
             try:
                 await self._ensure_connection(reconnecting=attempt > 0)
                 assert self._reader is not None and self._writer is not None
-                response = await self._execute_once(params, reader=self._reader, writer=self._writer)
+                response = await self._execute_once(
+                    params, reader=self._reader, writer=self._writer
+                )
                 if not self.keep_open:
                     await self._disconnect_async()
                 return response

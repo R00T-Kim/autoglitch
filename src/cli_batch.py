@@ -1,4 +1,5 @@
 """Batch command helpers for AUTOGLITCH CLI queue/soak flows."""
+
 from __future__ import annotations
 
 import argparse
@@ -37,7 +38,6 @@ WriteJsonReport = Callable[[str, dict[str, Any]], Path]
 LoadRunConfig = Callable[[argparse.Namespace], tuple[dict[str, Any], str | None]]
 ValidateRuntimeConfig = Callable[..., list[str]]
 RunHilPreflightForArgs = Callable[..., dict[str, Any] | None]
-
 
 
 def queue_run(
@@ -87,7 +87,9 @@ def queue_run(
         )
         and not args.allow_parallel_serial
     ):
-        raise SystemExit("parallel serial queue is blocked by default; add --allow-parallel-serial to override")
+        raise SystemExit(
+            "parallel serial queue is blocked by default; add --allow-parallel-serial to override"
+        )
 
     checkpoint_file = _resolve_queue_checkpoint_path(args.checkpoint_file, queue_path)
     queue_digest = hashlib.sha256(queue_path.read_bytes()).hexdigest()
@@ -219,7 +221,6 @@ def queue_run(
     print(json.dumps(summary, indent=2, ensure_ascii=False))
 
 
-
 def soak_run(
     args: argparse.Namespace,
     *,
@@ -240,7 +241,9 @@ def soak_run(
     if args.max_workers > 1 and not args.continue_on_error:
         raise SystemExit("soak parallel mode requires --continue-on-error")
     if args.max_workers > 1 and _is_serial_soak(args) and not args.allow_parallel_serial:
-        raise SystemExit("parallel serial soak is blocked by default; add --allow-parallel-serial to override")
+        raise SystemExit(
+            "parallel serial soak is blocked by default; add --allow-parallel-serial to override"
+        )
 
     soak_preflight: dict[str, Any] | None = None
     if bool(getattr(args, "require_preflight", False)):
@@ -320,7 +323,9 @@ def soak_run(
             runs.append(record)
             new_batches += 1
             next_batch += 1
-            _update_soak_checkpoint(checkpoint_data, checkpoint_file, runs, soak_key, next_batch + 1)
+            _update_soak_checkpoint(
+                checkpoint_data, checkpoint_file, runs, soak_key, next_batch + 1
+            )
             if record.get("status") == "failed" and not args.continue_on_error:
                 raise SystemExit(record.get("error", {}).get("message", "soak batch failed"))
             if args.batch_interval_s > 0 and args.max_workers == 1:

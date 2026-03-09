@@ -31,7 +31,9 @@ def test_policy_engine_rejects_unknown_field() -> None:
     proposal = planner.propose(_snapshot(), {"optimizer": {"bo": {"candidate_pool_size": 192}}})
     proposal.changes["hardware.mode"] = "serial"  # 강제 금지 필드
 
-    verdict = policy.evaluate(proposal, current_config={"optimizer": {"bo": {"candidate_pool_size": 192}}})
+    verdict = policy.evaluate(
+        proposal, current_config={"optimizer": {"bo": {"candidate_pool_size": 192}}}
+    )
     assert verdict.accepted is False
     assert any(reason == "field_not_allowed:hardware.mode" for reason in verdict.reasons)
 
@@ -50,7 +52,9 @@ def test_policy_engine_accepts_allowed_change_under_limits() -> None:
     proposal = planner.propose(_snapshot(), {"optimizer": {"bo": {"candidate_pool_size": 192}}})
     proposal.changes = {"optimizer.bo.candidate_pool_size": 220}
 
-    verdict = policy.evaluate(proposal, current_config={"optimizer": {"bo": {"candidate_pool_size": 192}}})
+    verdict = policy.evaluate(
+        proposal, current_config={"optimizer": {"bo": {"candidate_pool_size": 192}}}
+    )
     assert verdict.accepted is True
     assert verdict.normalized_changes["optimizer.bo.candidate_pool_size"] == 220
     assert verdict.validation_stage == "policy"
@@ -71,10 +75,14 @@ def test_policy_engine_rejects_bad_type_with_validation_metadata() -> None:
     proposal = planner.propose(_snapshot(), {"optimizer": {"bo": {"candidate_pool_size": 192}}})
     proposal.changes = {"optimizer.bo.candidate_pool_size": "oops"}
 
-    verdict = policy.evaluate(proposal, current_config={"optimizer": {"bo": {"candidate_pool_size": 192}}})
+    verdict = policy.evaluate(
+        proposal, current_config={"optimizer": {"bo": {"candidate_pool_size": 192}}}
+    )
 
     assert verdict.accepted is False
-    assert any(reason == "invalid_type:optimizer.bo.candidate_pool_size" for reason in verdict.reasons)
+    assert any(
+        reason == "invalid_type:optimizer.bo.candidate_pool_size" for reason in verdict.reasons
+    )
     assert verdict.effect_type_by_path["optimizer.bo.candidate_pool_size"] == "live"
     assert verdict.validation_status_by_path["optimizer.bo.candidate_pool_size"] == "invalid_type"
 

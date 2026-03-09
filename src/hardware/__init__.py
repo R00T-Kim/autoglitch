@@ -1,6 +1,7 @@
 """Hardware abstractions, discovery, and implementations."""
 
 from .base import BaseGlitcher, BaseHardwareAdapter, BaseScope, BaseTarget
+from .chipwhisperer_hardware import ChipWhispererHardware
 from .framework import (
     DEFAULT_BINDING_FILE,
     DetectedHardware,
@@ -12,6 +13,7 @@ from .framework import (
     HardwareResolutionError,
     binding_store_from_config,
     build_default_registry,
+    build_registry_from_config,
     detect_hardware,
     doctor_hardware,
     hardware_binding_lock,
@@ -30,6 +32,7 @@ __all__ = [
     "BaseHardwareAdapter",
     "BaseScope",
     "BaseTarget",
+    "ChipWhispererHardware",
     "DEFAULT_BINDING_FILE",
     "DetectedHardware",
     "HardwareBinding",
@@ -43,6 +46,7 @@ __all__ = [
     "TypedSerialCommandHardware",
     "binding_store_from_config",
     "build_default_registry",
+    "build_registry_from_config",
     "detect_hardware",
     "doctor_hardware",
     "hardware_binding_lock",

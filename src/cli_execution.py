@@ -1,4 +1,5 @@
 """Core campaign execution helpers for the AUTOGLITCH CLI."""
+
 from __future__ import annotations
 
 import argparse
@@ -8,7 +9,6 @@ from collections.abc import Callable
 from datetime import datetime
 from typing import Any
 
-from .classifier import RuleBasedClassifier
 from .cli_agentic import _run_campaign_agentic
 from .cli_support import (
     _aggregate_rerun_results,
@@ -24,8 +24,6 @@ from .cli_support import (
 from .hardware import hardware_binding_lock
 from .llm_advisor import LLMAdvisor
 from .logging_viz import ExperimentLogger
-from .mapper import PrimitiveMapper
-from .observer import BasicObserver
 from .plugins import PluginRegistry
 from .runtime import RecoveryExecutor
 from .safety import SafetyController
@@ -40,6 +38,61 @@ RunSingleCampaign = Callable[..., dict[str, Any]]
 CreateOptimizer = Callable[..., Any]
 CreateMlflowTracker = Callable[[dict[str, Any]], Any]
 CreateHardware = Callable[..., Any]
+
+DEFAULT_COMPONENT_PLUGINS = {
+    "observer": "basic-observer",
+    "classifier": "rule-classifier",
+    "mapper": "primitive-mapper",
+}
+
+
+def _collect_lab_metadata(args: argparse.Namespace, config: dict[str, Any]) -> dict[str, Any]:
+    config_lab = config.get("lab", {}) if isinstance(config.get("lab", {}), dict) else {}
+    return {
+        "operator": getattr(args, "operator", None) or config_lab.get("operator"),
+        "board_id": getattr(args, "board_id", None) or config_lab.get("board_id"),
+        "session_id": getattr(args, "session_id", None) or config_lab.get("session_id"),
+        "wiring_profile": getattr(args, "wiring_profile", None) or config_lab.get("wiring_profile"),
+        "board_prep_profile": getattr(args, "board_prep_profile", None)
+        or config_lab.get("board_prep_profile"),
+        "power_profile": getattr(args, "power_profile", None) or config_lab.get("power_profile"),
+    }
+
+
+def _collect_benchmark_metadata(
+    args: argparse.Namespace,
+    config: dict[str, Any],
+    *,
+    backend: str | None = None,
+) -> dict[str, Any]:
+    config_benchmark = (
+        config.get("benchmark", {}) if isinstance(config.get("benchmark", {}), dict) else {}
+    )
+    benchmark_id = getattr(args, "benchmark_id", None) or config_benchmark.get("benchmark_id")
+    task = getattr(args, "benchmark_task", None) or config_benchmark.get("task")
+    return {
+        "enabled": bool(config_benchmark.get("enabled", False) or benchmark_id or task),
+        "benchmark_id": benchmark_id,
+        "task": task or "det_fault",
+        "backend": backend
+        or getattr(args, "hardware", None)
+        or config.get("hardware", {}).get("adapter")
+        or config.get("hardware", {}).get("mode"),
+        "target": str(config.get("target", {}).get("name", getattr(args, "target", "unknown"))),
+    }
+
+
+def _hardware_resolution_snapshot(
+    args: argparse.Namespace, config: dict[str, Any]
+) -> dict[str, Any]:
+    binding = getattr(args, "resolved_hardware_binding", None)
+    if not isinstance(binding, dict):
+        binding = {}
+    return {
+        "source": getattr(args, "resolved_hardware_source", None),
+        "binding": binding,
+        "target": str(config.get("target", {}).get("name", "unknown")),
+    }
 
 
 def execute_campaign(
@@ -79,7 +132,9 @@ def execute_campaign(
     rerun_count = int(args.rerun_count or config.get("experiment", {}).get("rerun_count", 1))
 
     config_threshold = config.get("experiment", {}).get("success_threshold", 0.3)
-    success_threshold = float(args.success_threshold if args.success_threshold is not None else config_threshold)
+    success_threshold = float(
+        args.success_threshold if args.success_threshold is not None else config_threshold
+    )
 
     default_seed = int(config.get("experiment", {}).get("seed", 42))
     fixed_seed = args.fixed_seed
@@ -100,7 +155,13 @@ def execute_campaign(
         run_config.setdefault("ai", {})["mode"] = ai_mode
         if policy_file:
             run_config.setdefault("ai", {})["policy_file"] = policy_file
-        run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = objective_mode
+        run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = (
+            objective_mode
+        )
+        run_config["lab"] = _collect_lab_metadata(args, run_config)
+        run_config["benchmark"] = _collect_benchmark_metadata(args, run_config)
+        if preflight_result is not None:
+            run_config["_preflight_result"] = preflight_result
         run_config["_runtime_fingerprint"] = _runtime_fingerprint(
             config_hash_payload=run_config,
             store_enabled=bool(run_config.get("logging", {}).get("store_env_fingerprint", True)),
@@ -154,6 +215,75 @@ def execute_campaign(
     return output
 
 
+def _component_target_candidates(config: dict[str, Any]) -> set[str]:
+    candidates: set[str] = set()
+    target_cfg = config.get("target", {}) if isinstance(config.get("target", {}), dict) else {}
+    hardware_target = config.get("hardware", {}).get("target", {})
+    if isinstance(hardware_target, dict):
+        target_type = hardware_target.get("type")
+        if target_type:
+            candidates.add(str(target_type).strip().lower())
+    for value in (target_cfg.get("name"), target_cfg.get("family")):
+        if value:
+            candidates.add(str(value).strip().lower())
+    return {item for item in candidates if item}
+
+
+def _validate_component_target(
+    *,
+    component: str,
+    plugin_name: str,
+    manifest: Any,
+    config: dict[str, Any],
+) -> None:
+    supported_targets = [
+        str(item).strip().lower()
+        for item in getattr(manifest, "supported_targets", [])
+        if str(item).strip()
+    ]
+    if not supported_targets or "*" in supported_targets:
+        return
+
+    candidates = _component_target_candidates(config)
+    if candidates and candidates.intersection(supported_targets):
+        return
+
+    target_name = str(config.get("target", {}).get("name", "unknown"))
+    raise RuntimeError(
+        f"{component} plugin {plugin_name} does not support target {target_name}. "
+        f"supported_targets={supported_targets}"
+    )
+
+
+def _instantiate_runtime_components(
+    *,
+    config: dict[str, Any],
+    plugin_registry: PluginRegistry,
+) -> tuple[dict[str, str], Any, Any, Any]:
+    components_cfg = (
+        config.get("components", {}) if isinstance(config.get("components", {}), dict) else {}
+    )
+    selected_names: dict[str, str] = {}
+    instances: dict[str, Any] = {}
+
+    for component, kind in (
+        ("observer", "observer"),
+        ("classifier", "classifier"),
+        ("mapper", "mapper"),
+    ):
+        plugin_name = str(components_cfg.get(component, DEFAULT_COMPONENT_PLUGINS[component]))
+        manifest = plugin_registry.require(plugin_name, kind=kind)
+        _validate_component_target(
+            component=component,
+            plugin_name=plugin_name,
+            manifest=manifest,
+            config=config,
+        )
+        instances[component] = plugin_registry.instantiate(plugin_name, kind=kind)
+        selected_names[component] = plugin_name
+
+    return selected_names, instances["observer"], instances["classifier"], instances["mapper"]
+
 
 def run_single_campaign(
     *,
@@ -181,9 +311,10 @@ def run_single_campaign(
         rl_backend=getattr(args, "rl_backend", None),
     )
 
-    observer = BasicObserver()
-    classifier = RuleBasedClassifier()
-    mapper = PrimitiveMapper()
+    component_plugins, observer, classifier, mapper = _instantiate_runtime_components(
+        config=run_config,
+        plugin_registry=plugin_registry,
+    )
     logger_viz = ExperimentLogger(run_id=run_id)
     mlflow_tracker = create_mlflow_tracker(run_config)
     hardware = create_hardware(args=args, config=run_config, seed=run_seed)
@@ -194,6 +325,10 @@ def run_single_campaign(
     run_config["run_id"] = run_id
     run_config["run_tag"] = run_tag
     run_config.setdefault("target", run_config.get("target", {}))
+    run_config["_planner_backend"] = (
+        "heuristic" if _resolve_ai_mode(args, run_config) != "off" else "disabled"
+    )
+    run_config["_advisor_backend"] = "heuristic" if llm is not None else "disabled"
 
     orchestrator = orchestrator_cls(
         optimizer=optimizer,
@@ -215,12 +350,18 @@ def run_single_campaign(
             "optimizer": str(optimizer_type),
             "run_tag": str(run_tag or "none"),
             "ai_mode": str(_resolve_ai_mode(args, run_config)),
+            "observer": component_plugins["observer"],
+            "classifier": component_plugins["classifier"],
+            "mapper": component_plugins["mapper"],
         },
         params={
             "seed": run_seed,
             "trials": trials,
             "run_tag": run_tag or "none",
             "ai_mode": _resolve_ai_mode(args, run_config),
+            "observer_plugin": component_plugins["observer"],
+            "classifier_plugin": component_plugins["classifier"],
+            "mapper_plugin": component_plugins["mapper"],
         },
     )
     mlflow_status = "FAILED"
@@ -229,7 +370,9 @@ def run_single_campaign(
             ai_mode = _resolve_ai_mode(args, run_config)
             policy_file = _resolve_policy_file(args, run_config)
             if ai_mode == "off":
-                campaign = orchestrator.run_campaign(n_trials=trials, target_primitive=target_primitive)
+                campaign = orchestrator.run_campaign(
+                    n_trials=trials, target_primitive=target_primitive
+                )
                 agentic_meta = {
                     "mode": "off",
                     "events": [],
@@ -253,8 +396,22 @@ def run_single_campaign(
             campaign,
             mlflow_info=mlflow_tracker.snapshot(),
             optimizer_info=optimizer_telemetry,
+            component_plugins=component_plugins,
+            benchmark=run_config.get("benchmark", {}),
         )
-        manifest_path = logger_viz.write_run_manifest(run_config, plugin_snapshot=plugin_registry.snapshot())
+        manifest_path = logger_viz.write_run_manifest(
+            run_config, plugin_snapshot=plugin_registry.snapshot()
+        )
+        bundle_payload = logger_viz.write_artifact_bundle(
+            summary_path=summary_path,
+            manifest_path=manifest_path,
+            log_path=logger_viz.log_path,
+            preflight_report=run_config.get("_preflight_result"),
+            hardware_resolution=_hardware_resolution_snapshot(args, run_config),
+            benchmark=run_config.get("benchmark", {}),
+            lab=run_config.get("lab", {}),
+            component_plugins=component_plugins,
+        )
 
         mlflow_tracker.log_metrics(
             {
@@ -267,6 +424,7 @@ def run_single_campaign(
         mlflow_tracker.log_artifact(summary_path)
         mlflow_tracker.log_artifact(manifest_path)
         mlflow_tracker.log_artifact(logger_viz.log_path)
+        mlflow_tracker.log_artifact(bundle_payload["manifest"])
         mlflow_status = "FINISHED"
 
         return {
@@ -280,17 +438,34 @@ def run_single_campaign(
             "n_trials": campaign.n_trials,
             "success_rate": campaign.success_rate,
             "primitive_repro_rate": campaign.primitive_repro_rate,
+            "time_to_first_valid_fault": campaign.time_to_first_valid_fault,
             "time_to_first_primitive": campaign.time_to_first_primitive,
             "runtime_total_seconds": campaign.runtime_total_seconds,
             "error_breakdown": campaign.error_breakdown,
+            "execution_status_breakdown": campaign.execution_status_breakdown,
+            "infra_failure_count": campaign.infra_failure_count,
+            "blocked_count": campaign.blocked_count,
+            "fault_distribution": {
+                fault.name: count for fault, count in campaign.fault_distribution.items()
+            },
+            "primitive_distribution": {
+                primitive.name: count
+                for primitive, count in campaign.primitive_distribution.items()
+            },
             "optimizer_backend": getattr(optimizer, "backend_in_use", optimizer_type),
             "optimizer_telemetry": optimizer_telemetry,
+            "component_plugins": component_plugins,
+            "benchmark": run_config.get("benchmark", {}),
+            "lab": run_config.get("lab", {}),
             "agentic": agentic_meta,
             "circuit_breaker": recovery_executor.breaker.snapshot(),
             "mlflow": mlflow_tracker.snapshot(),
             "report": str(summary_path),
             "manifest": str(manifest_path),
             "log": str(logger_viz.log_path),
+            "artifact_bundle": bundle_payload["bundle_dir"],
+            "bundle_manifest": bundle_payload["manifest"],
+            "artifact_bundle_status": bundle_payload["completeness"],
         }
     finally:
         try:

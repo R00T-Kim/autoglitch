@@ -1,4 +1,5 @@
 """Decision trace persistence for agentic mode."""
+
 from __future__ import annotations
 
 import json

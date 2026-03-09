@@ -41,7 +41,6 @@ def test_serial_command_hardware_with_mock_bridge() -> None:
         bridge.close()
 
 
-
 def test_typed_serial_hardware_with_mock_bridge() -> None:
     bridge = MockGlitchBridge(seed=42)
     try:

@@ -1,4 +1,5 @@
 """Hardware discovery/setup/doctor CLI commands."""
+
 from __future__ import annotations
 
 import argparse
@@ -50,12 +51,13 @@ def detect_hardware_command(
     payload = {
         "schema_version": 1,
         "template": template_name,
-        "binding_file": str(binding_store_from_config(management_config, getattr(args, "binding_file", None)).path),
+        "binding_file": str(
+            binding_store_from_config(management_config, getattr(args, "binding_file", None)).path
+        ),
         "detected": len(candidates),
         "candidates": [candidate.to_dict() for candidate in candidates],
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
-
 
 
 def setup_hardware_command(
@@ -72,7 +74,9 @@ def setup_hardware_command(
     management_config = _prepare_management_config(args, config)
     store = binding_store_from_config(management_config, getattr(args, "binding_file", None))
     if store.path.exists() and not bool(getattr(args, "force", False)):
-        raise SystemExit(f"hardware binding already exists: {store.path} (use --force to overwrite)")
+        raise SystemExit(
+            f"hardware binding already exists: {store.path} (use --force to overwrite)"
+        )
 
     resolution = resolve_hardware(
         config=management_config,
@@ -81,7 +85,9 @@ def setup_hardware_command(
         seed=int(config.get("experiment", {}).get("seed", 42)),
         binding_file=getattr(args, "binding_file", None),
     )
-    store.save(resolution.selected, selected_from=resolution.source, candidates=resolution.candidates)
+    store.save(
+        resolution.selected, selected_from=resolution.source, candidates=resolution.candidates
+    )
 
     payload = {
         "schema_version": 1,
@@ -92,7 +98,6 @@ def setup_hardware_command(
         "candidate_count": len(resolution.candidates),
     }
     print(json.dumps(payload, indent=2, ensure_ascii=False))
-
 
 
 def doctor_hardware_command(

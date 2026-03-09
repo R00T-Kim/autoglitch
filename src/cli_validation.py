@@ -1,4 +1,5 @@
 """Release-candidate HIL validation workflow helpers."""
+
 from __future__ import annotations
 
 import argparse
@@ -63,11 +64,15 @@ def validate_hil_rc_command(
     output_dir = Path("experiments/results")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    software_gate = _run_software_gate() if not bool(getattr(args, "skip_software_gate", False)) else {
-        "status": "skipped",
-        "ok": False,
-        "reason": "skip_software_gate",
-    }
+    software_gate = (
+        _run_software_gate()
+        if not bool(getattr(args, "skip_software_gate", False))
+        else {
+            "status": "skipped",
+            "ok": False,
+            "reason": "skip_software_gate",
+        }
+    )
 
     primary_config = _prepare_primary_config(args, config, primary_adapter=primary_adapter)
     onboarding = _run_primary_onboarding(
@@ -262,17 +267,23 @@ def _run_primary_onboarding(
     )
 
     existing = binding_store.load() if binding_store.path.exists() else None
-    existing_matches = existing is not None and _binding_equivalent(existing.to_dict(), resolution.selected.to_dict())
+    existing_matches = existing is not None and _binding_equivalent(
+        existing.to_dict(), resolution.selected.to_dict()
+    )
     wrote_binding = False
     if existing is None:
-        binding_store.save(resolution.selected, selected_from=resolution.source, candidates=resolution.candidates)
+        binding_store.save(
+            resolution.selected, selected_from=resolution.source, candidates=resolution.candidates
+        )
         wrote_binding = True
     elif not existing_matches:
         if not force_setup:
             raise SystemExit(
                 f"binding file {binding_store.path} already exists with a different adapter/location; rerun with --force-setup"
             )
-        binding_store.save(resolution.selected, selected_from=resolution.source, candidates=resolution.candidates)
+        binding_store.save(
+            resolution.selected, selected_from=resolution.source, candidates=resolution.candidates
+        )
         wrote_binding = True
 
     doctor = doctor_hardware(
@@ -374,7 +385,9 @@ def _run_campaign_stage(
                 "throughput_trials_per_second": float(
                     report_payload.get("runtime", {}).get("throughput_trials_per_second", 0.0)
                 ),
-                "latency_p95_seconds": float(report_payload.get("latency", {}).get("p95_seconds", 0.0)),
+                "latency_p95_seconds": float(
+                    report_payload.get("latency", {}).get("p95_seconds", 0.0)
+                ),
                 "runtime_failure_ratio": _runtime_failure_ratio(run_summary),
                 "error_breakdown": dict(run_summary.get("error_breakdown", {})),
             }
@@ -488,7 +501,9 @@ def _run_soak_resume_drill(
     if bool(getattr(args, "skip_soak", False)):
         return {"ok": False, "status": "skipped", "reason": "skip_soak"}
 
-    checkpoint_path = output_dir / f"soak_rc_checkpoint_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json"
+    checkpoint_path = (
+        output_dir / f"soak_rc_checkpoint_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.json"
+    )
     soak_base = _build_run_namespace(
         {
             "config": getattr(args, "config", "configs/default.yaml"),
@@ -565,7 +580,8 @@ def _run_soak_resume_drill(
         write_json_report=_write_json_report,
     )
     return {
-        "ok": int(resume_payload.get("completed_batches", 0)) >= int(getattr(args, "soak_max_batches", 20)),
+        "ok": int(resume_payload.get("completed_batches", 0))
+        >= int(getattr(args, "soak_max_batches", 20)),
         "checkpoint_file": str(checkpoint_path),
         "first": first_payload,
         "resume": resume_payload,
@@ -667,7 +683,9 @@ def _evaluate_automated_gates(
     warmup_throughput = float(warmup["aggregate"].get("throughput_mean", 0.0))
     graded_throughput = float(graded_aggregate.get("throughput_mean", 0.0))
     throughput_floor_ok = warmup_throughput <= 0 or graded_throughput >= (warmup_throughput * 0.80)
-    per_run_runtime_failure_ok = all(float(run.get("runtime_failure_ratio", 0.0)) <= 0.10 for run in graded_runs)
+    per_run_runtime_failure_ok = all(
+        float(run.get("runtime_failure_ratio", 0.0)) <= 0.10 for run in graded_runs
+    )
     aggregate_runtime_failure_ok = float(graded_aggregate.get("runtime_failure_ratio", 0.0)) <= 0.15
 
     automated_ok = all(
@@ -718,14 +736,22 @@ def _aggregate_validation_runs(runs: list[dict[str, Any]]) -> dict[str, Any]:
             "runtime_failure_ratio": 0.0,
         }
     total_trials = sum(max(1, int(run.get("n_trials", 0) or 0)) for run in runs)
-    runtime_failures = sum(int(run.get("error_breakdown", {}).get("runtime_failure", 0)) for run in runs)
+    runtime_failures = sum(
+        int(run.get("error_breakdown", {}).get("runtime_failure", 0)) for run in runs
+    )
     return {
         "count": len(runs),
         "success_rate_mean": float(mean(float(run.get("success_rate", 0.0)) for run in runs)),
-        "primitive_repro_rate_mean": float(mean(float(run.get("primitive_repro_rate", 0.0)) for run in runs)),
+        "primitive_repro_rate_mean": float(
+            mean(float(run.get("primitive_repro_rate", 0.0)) for run in runs)
+        ),
         "latency_p95_max": float(max(float(run.get("latency_p95_seconds", 0.0)) for run in runs)),
-        "throughput_mean": float(mean(float(run.get("throughput_trials_per_second", 0.0)) for run in runs)),
-        "runtime_failure_ratio": float(runtime_failures / total_trials) if total_trials > 0 else 0.0,
+        "throughput_mean": float(
+            mean(float(run.get("throughput_trials_per_second", 0.0)) for run in runs)
+        ),
+        "runtime_failure_ratio": float(runtime_failures / total_trials)
+        if total_trials > 0
+        else 0.0,
     }
 
 

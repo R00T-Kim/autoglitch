@@ -1,4 +1,5 @@
 """Extracted command handlers for the AUTOGLITCH CLI."""
+
 from __future__ import annotations
 
 import argparse
@@ -29,6 +30,7 @@ from .cli_support import (
     compare_summary_to_report,
     summarize_trial_records,
 )
+from .hardware import normalize_adapter_request
 
 RunSingleCampaign = Callable[..., dict[str, Any]]
 
@@ -68,71 +70,168 @@ def run_benchmark_command(
     objective_mode = str(getattr(args, "objective", "single")).lower()
     if objective_mode not in {"single", "multi"}:
         objective_mode = "single"
-
-    results_by_algo: dict[str, list[dict[str, Any]]] = {algo: [] for algo in algorithms}
-    base_seed = int(config.get("experiment", {}).get("fixed_seed") or config.get("experiment", {}).get("seed", 42))
-
-    for algo_index, algo in enumerate(algorithms):
-        for run_index in range(args.runs):
-            run_seed = base_seed + run_index + (algo_index * 10000)
-            run_id = f"bench_{algo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_index + 1:02d}"
-
-            run_args = copy.copy(args)
-            run_args.optimizer = algo
-            run_args.enable_llm = False
-            run_args.run_tag = run_tag
-            run_args.ai_mode = ai_mode
-            run_args.objective = objective_mode
-            run_config = copy.deepcopy(config)
-            run_config.setdefault("experiment", {})["seed"] = run_seed
-            run_config.setdefault("logging", {})["run_tag"] = run_tag
-            run_config.setdefault("ai", {})["mode"] = ai_mode
-            run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = objective_mode
-
-            summary = run_single_campaign(
-                run_config=run_config,
-                args=run_args,
-                run_seed=run_seed,
-                run_id=run_id,
-                trials=int(args.trials),
-                target_primitive=None,
-                plugin_registry=plugin_registry,
-            )
-            results_by_algo[algo].append(summary)
-
-    aggregate_by_algo = {
-        algo: _aggregate_rerun_results(runs, success_threshold=float(args.success_threshold))
-        for algo, runs in results_by_algo.items()
+    benchmark_cfg = (
+        config.get("benchmark", {}) if isinstance(config.get("benchmark", {}), dict) else {}
+    )
+    lab_cfg = config.get("lab", {}) if isinstance(config.get("lab", {}), dict) else {}
+    backend_items = (
+        getattr(args, "backends", None)
+        or benchmark_cfg.get("backends")
+        or [
+            getattr(args, "hardware", None)
+            or config.get("hardware", {}).get("adapter")
+            or config.get("hardware", {}).get("mode", "mock")
+        ]
+    )
+    if isinstance(backend_items, str):
+        backend_items = [item.strip() for item in backend_items.split(",") if item.strip()]
+    backends = [
+        normalize_adapter_request(str(item)) or str(item)
+        for item in backend_items
+        if str(item).strip()
+    ]
+    if not backends:
+        backends = ["mock-hardware"]
+    benchmark_id = str(
+        getattr(args, "benchmark_id", None)
+        or benchmark_cfg.get("benchmark_id")
+        or f"benchmark_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+    benchmark_task = str(
+        getattr(args, "benchmark_task", None) or benchmark_cfg.get("task", "det_fault")
+    )
+    lab_meta = {
+        "operator": getattr(args, "operator", None) or lab_cfg.get("operator"),
+        "board_id": getattr(args, "board_id", None) or lab_cfg.get("board_id"),
+        "session_id": getattr(args, "session_id", None) or lab_cfg.get("session_id"),
+        "wiring_profile": getattr(args, "wiring_profile", None) or lab_cfg.get("wiring_profile"),
+        "board_prep_profile": getattr(args, "board_prep_profile", None)
+        or lab_cfg.get("board_prep_profile"),
+        "power_profile": getattr(args, "power_profile", None) or lab_cfg.get("power_profile"),
     }
 
-    winner = max(
-        aggregate_by_algo.items(),
-        key=lambda item: (
-            item[1].get("primitive_repro_rate_mean", 0.0),
-            item[1].get("success_rate_mean", 0.0),
-        ),
-    )[0]
+    results_by_backend_algo: dict[str, dict[str, list[dict[str, Any]]]] = {
+        backend: {algo: [] for algo in algorithms} for backend in backends
+    }
+    base_seed = int(
+        config.get("experiment", {}).get("fixed_seed")
+        or config.get("experiment", {}).get("seed", 42)
+    )
 
-    payload = {
+    for backend_index, backend in enumerate(backends):
+        for algo_index, algo in enumerate(algorithms):
+            for run_index in range(args.runs):
+                run_seed = base_seed + run_index + (algo_index * 10_000) + (backend_index * 100_000)
+                run_id = (
+                    f"bench_{benchmark_id}_{backend}_{algo}_"
+                    f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{run_index + 1:02d}"
+                )
+
+                run_args = copy.copy(args)
+                run_args.optimizer = algo
+                run_args.hardware = backend
+                run_args.enable_llm = False
+                run_args.run_tag = run_tag
+                run_args.ai_mode = ai_mode
+                run_args.objective = objective_mode
+                run_args.benchmark_id = benchmark_id
+                run_args.benchmark_task = benchmark_task
+                run_config = copy.deepcopy(config)
+                run_config.setdefault("experiment", {})["seed"] = run_seed
+                run_config.setdefault("logging", {})["run_tag"] = run_tag
+                run_config.setdefault("ai", {})["mode"] = ai_mode
+                run_config.setdefault("optimizer", {}).setdefault("bo", {})["objective_mode"] = (
+                    objective_mode
+                )
+                run_config.setdefault("hardware", {})["adapter"] = backend
+                run_config["benchmark"] = {
+                    "enabled": True,
+                    "benchmark_id": benchmark_id,
+                    "task": benchmark_task,
+                    "backends": backends,
+                    "backend": backend,
+                    "operator": lab_meta.get("operator"),
+                    "board_id": lab_meta.get("board_id"),
+                    "session_id": lab_meta.get("session_id"),
+                }
+                run_config["lab"] = lab_meta
+
+                summary = run_single_campaign(
+                    run_config=run_config,
+                    args=run_args,
+                    run_seed=run_seed,
+                    run_id=run_id,
+                    trials=int(args.trials),
+                    target_primitive=None,
+                    plugin_registry=plugin_registry,
+                )
+                results_by_backend_algo[backend][algo].append(summary)
+
+    aggregate_by_backend_algo = {
+        backend: {
+            algo: _aggregate_rerun_results(runs, success_threshold=float(args.success_threshold))
+            for algo, runs in algo_results.items()
+        }
+        for backend, algo_results in results_by_backend_algo.items()
+    }
+    compare_cells: list[dict[str, Any]] = [
+        {
+            "backend": backend,
+            "algorithm": algo,
+            "aggregate": aggregate,
+        }
+        for backend, algo_results in aggregate_by_backend_algo.items()
+        for algo, aggregate in algo_results.items()
+    ]
+    overall_winner: dict[str, Any] = max(
+        compare_cells,
+        key=lambda item: (
+            float(item["aggregate"].get("primitive_repro_rate_mean", 0.0)),
+            float(item["aggregate"].get("success_rate_mean", 0.0)),
+            -float(item["aggregate"].get("infra_failure_rate_mean", 0.0)),
+        ),
+    )
+
+    benchmark_payload = {
         "schema_version": 1,
         "created_at": datetime.now().isoformat(),
+        "benchmark_id": benchmark_id,
+        "task": benchmark_task,
         "template": template_name,
         "target": config.get("target", {}).get("name", args.target),
+        "backends": backends,
         "algorithms": algorithms,
         "ai_mode": ai_mode,
         "objective_mode": objective_mode,
         "run_tag": run_tag,
         "runs_per_algorithm": int(args.runs),
         "trials_per_run": int(args.trials),
-        "results": results_by_algo,
-        "aggregate": aggregate_by_algo,
-        "winner": winner,
+        "lab": lab_meta,
+        "results": results_by_backend_algo,
+        "aggregate": aggregate_by_backend_algo,
     }
+    benchmark_path = _write_json_report("benchmark", benchmark_payload)
 
-    path = _write_json_report("comparison", payload)
-    payload["comparison_report"] = str(path)
-    print(json.dumps(payload, indent=2, ensure_ascii=False))
+    compare_payload = {
+        "schema_version": 1,
+        "created_at": datetime.now().isoformat(),
+        "benchmark_id": benchmark_id,
+        "target": config.get("target", {}).get("name", args.target),
+        "task": benchmark_task,
+        "run_tag": run_tag,
+        "backends": backends,
+        "algorithms": algorithms,
+        "aggregate": aggregate_by_backend_algo,
+        "overall_winner": overall_winner,
+        "cells": compare_cells,
+    }
+    compare_path = _write_json_report("comparison", compare_payload)
 
+    output = dict(benchmark_payload)
+    output["benchmark_report"] = str(benchmark_path)
+    output["comparison_report"] = str(compare_path)
+    output["overall_winner"] = overall_winner
+    print(json.dumps(output, indent=2, ensure_ascii=False))
 
 
 def validate_config_command(args: argparse.Namespace) -> None:
@@ -154,12 +253,10 @@ def validate_config_command(args: argparse.Namespace) -> None:
         raise SystemExit(2)
 
 
-
 def list_plugins_command(args: argparse.Namespace) -> None:
     registry = _load_plugin_registry({}, getattr(args, "plugin_dir", []))
     manifests = [manifest.to_dict() for manifest in registry.list(kind=args.kind)]
     print(json.dumps({"schema_version": 1, "plugins": manifests}, indent=2, ensure_ascii=False))
-
 
 
 def replay_run_command(args: argparse.Namespace) -> None:
@@ -186,7 +283,6 @@ def replay_run_command(args: argparse.Namespace) -> None:
         output["comparison"] = compare_summary_to_report(replay_summary, report_payload)
 
     print(json.dumps(output, indent=2, ensure_ascii=False))
-
 
 
 def show_report_command(args: argparse.Namespace) -> None:

@@ -1,4 +1,5 @@
 """Agentic, evaluation-suite, and knowledge CLI handlers."""
+
 from __future__ import annotations
 
 import argparse
@@ -40,7 +41,9 @@ def planner_step_command(args: argparse.Namespace) -> None:
         max_actions_per_cycle=int(config.get("ai", {}).get("max_actions_per_cycle", 3)),
     )
     policy = PolicyEngine.from_sources(
-        config_policy=config.get("policy", {}) if isinstance(config.get("policy", {}), dict) else {},
+        config_policy=config.get("policy", {})
+        if isinstance(config.get("policy", {}), dict)
+        else {},
         policy_file=_resolve_policy_file(args, config),
         ai_limits=config.get("ai", {}) if isinstance(config.get("ai", {}), dict) else {},
     )

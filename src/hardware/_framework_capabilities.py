@@ -1,4 +1,5 @@
 """Capability filtering helpers for hardware resolution."""
+
 from __future__ import annotations
 
 from typing import Any

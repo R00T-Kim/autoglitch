@@ -1,4 +1,5 @@
 """Adapter factories, probes, and registry construction for hardware backends."""
+
 from __future__ import annotations
 
 from collections.abc import Iterable
@@ -14,6 +15,7 @@ from ._framework_models import (
     load_profiles,
     normalize_adapter_request,
 )
+from .chipwhisperer_hardware import ChipWhispererHardware
 from .mock import MockHardware
 from .serial_async_hardware import AsyncSerialCommandHardware
 from .serial_hardware import SerialCommandHardware
@@ -41,16 +43,26 @@ def build_default_registry(profile_dirs: Iterable[Path] | None = None) -> Hardwa
             detect=_detect_legacy_serial_hardware,
             aliases=("serial", "legacy-serial"),
         ),
+        HardwareAdapterDefinition(
+            profile=profiles.get("chipwhisperer-hardware", _fallback_chipwhisperer_profile()),
+            create=_create_chipwhisperer_hardware,
+            detect=_detect_chipwhisperer_hardware,
+            aliases=("chipwhisperer", "cw", "cw-hardware"),
+        ),
     ]
     return HardwareRegistry(definitions)
 
 
-def _create_mock_hardware(binding: HardwareBinding, _config: dict[str, Any], seed: int) -> MockHardware:
+def _create_mock_hardware(
+    binding: HardwareBinding, _config: dict[str, Any], seed: int
+) -> MockHardware:
     effective_seed = int(binding.metadata.get("seed", seed))
     return MockHardware(seed=effective_seed)
 
 
-def _create_legacy_serial_hardware(binding: HardwareBinding, config: dict[str, Any], seed: int) -> Any:  # noqa: ARG001
+def _create_legacy_serial_hardware(
+    binding: HardwareBinding, config: dict[str, Any], seed: int
+) -> Any:  # noqa: ARG001
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
     serial_cfg = hw_cfg.get("serial", {}) if isinstance(hw_cfg.get("serial", {}), dict) else {}
     target_cfg = hw_cfg.get("target", {}) if isinstance(hw_cfg.get("target", {}), dict) else {}
@@ -86,13 +98,46 @@ def _create_legacy_serial_hardware(binding: HardwareBinding, config: dict[str, A
     )
 
 
-def _create_typed_serial_hardware(binding: HardwareBinding, config: dict[str, Any], _seed: int) -> TypedSerialCommandHardware:
+def _create_typed_serial_hardware(
+    binding: HardwareBinding, config: dict[str, Any], _seed: int
+) -> TypedSerialCommandHardware:
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
     target_cfg = hw_cfg.get("target", {}) if isinstance(hw_cfg.get("target", {}), dict) else {}
     return TypedSerialCommandHardware(
         port=binding.location,
         baudrate=int(binding.baudrate or target_cfg.get("baudrate", 115200)),
         timeout=float(binding.timeout_s or target_cfg.get("timeout", 1.0)),
+    )
+
+
+def _create_chipwhisperer_hardware(
+    binding: HardwareBinding,
+    config: dict[str, Any],
+    _seed: int,
+) -> ChipWhispererHardware:
+    hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
+    target_cfg = hw_cfg.get("target", {}) if isinstance(hw_cfg.get("target", {}), dict) else {}
+    cw_cfg = (
+        hw_cfg.get("chipwhisperer", {}) if isinstance(hw_cfg.get("chipwhisperer", {}), dict) else {}
+    )
+    target_serial_port = cw_cfg.get("target_serial_port") or target_cfg.get("port")
+    target_baudrate = int(cw_cfg.get("target_baudrate") or target_cfg.get("baudrate", 115200))
+    target_timeout = float(cw_cfg.get("target_timeout") or target_cfg.get("timeout", 1.0))
+    return ChipWhispererHardware(
+        scope_name=str(cw_cfg.get("scope_name")) if cw_cfg.get("scope_name") else None,
+        serial_number=str(cw_cfg.get("serial_number")) if cw_cfg.get("serial_number") else None,
+        id_product=int(cw_cfg["id_product"]) if cw_cfg.get("id_product") is not None else None,
+        bitstream=str(cw_cfg.get("bitstream")) if cw_cfg.get("bitstream") else None,
+        force_programming=bool(cw_cfg.get("force_programming", False)),
+        prog_speed_hz=int(cw_cfg.get("prog_speed_hz", 10_000_000)),
+        default_setup=bool(cw_cfg.get("default_setup", True)),
+        glitch_mode=str(cw_cfg.get("glitch_mode", "voltage")),
+        glitch_output=str(cw_cfg.get("glitch_output", "glitch_only")),
+        trigger_src=str(cw_cfg.get("trigger_src", "manual")),
+        target_serial_port=str(target_serial_port) if target_serial_port else None,
+        target_baudrate=target_baudrate,
+        target_timeout=target_timeout,
+        capture_timeout_s=float(cw_cfg.get("capture_timeout_s", 0.25)),
     )
 
 
@@ -195,6 +240,48 @@ def _detect_legacy_serial_hardware(
     return results
 
 
+def _detect_chipwhisperer_hardware(
+    profile: HardwareProfile,
+    _candidate_ports: list[str],
+    config: dict[str, Any],
+) -> list[DetectedHardware]:
+    hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
+    cw_cfg = (
+        hw_cfg.get("chipwhisperer", {}) if isinstance(hw_cfg.get("chipwhisperer", {}), dict) else {}
+    )
+    requested_devices = ChipWhispererHardware.probe(
+        scope_name=str(cw_cfg.get("scope_name")) if cw_cfg.get("scope_name") else None,
+        serial_number=str(cw_cfg.get("serial_number")) if cw_cfg.get("serial_number") else None,
+        id_product=int(cw_cfg["id_product"]) if cw_cfg.get("id_product") is not None else None,
+    )
+    results: list[DetectedHardware] = []
+    for device in requested_devices:
+        identifier = str(device.get("sn") or device.get("name") or "device")
+        binding = HardwareBinding(
+            adapter_id=profile.adapter_id,
+            profile=profile.adapter_id,
+            transport=profile.transport,
+            location=f"chipwhisperer://{identifier}",
+            timeout_s=float(cw_cfg.get("capture_timeout_s", profile.default_timeout_s)),
+            target=str(config.get("target", {}).get("name", "")) or None,
+            metadata={
+                "scope_name": device.get("name"),
+                "serial_number": device.get("sn"),
+                "idProduct": device.get("idProduct"),
+            },
+        )
+        results.append(
+            DetectedHardware(
+                profile=profile,
+                binding=binding,
+                confidence=profile.max_confidence,
+                reason="chipwhisperer_device_detected",
+                metadata=dict(device.get("raw", {})),
+            )
+        )
+    return results
+
+
 def _default_baudrate_for(config: dict[str, Any], profile: HardwareProfile) -> int:
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
     target_cfg = hw_cfg.get("target", {}) if isinstance(hw_cfg.get("target", {}), dict) else {}
@@ -204,7 +291,9 @@ def _default_baudrate_for(config: dict[str, Any], profile: HardwareProfile) -> i
 def _default_timeout_for(config: dict[str, Any], profile: HardwareProfile) -> float:
     hw_cfg = config.get("hardware", {}) if isinstance(config.get("hardware", {}), dict) else {}
     target_cfg = hw_cfg.get("target", {}) if isinstance(hw_cfg.get("target", {}), dict) else {}
-    discovery_cfg = hw_cfg.get("discovery", {}) if isinstance(hw_cfg.get("discovery", {}), dict) else {}
+    discovery_cfg = (
+        hw_cfg.get("discovery", {}) if isinstance(hw_cfg.get("discovery", {}), dict) else {}
+    )
     probe_timeout = discovery_cfg.get("probe_timeout_s")
     if probe_timeout is not None:
         return float(probe_timeout)
@@ -249,4 +338,21 @@ def _fallback_legacy_serial_profile() -> HardwareProfile:
         protocol="legacy-text",
         capabilities=("glitch.execute", "target.reset", "target.trigger"),
         max_confidence=0.9,
+    )
+
+
+def _fallback_chipwhisperer_profile() -> HardwareProfile:
+    return HardwareProfile(
+        adapter_id="chipwhisperer-hardware",
+        display_name="ChipWhisperer Scope",
+        transport="usb",
+        protocol="chipwhisperer",
+        capabilities=(
+            "glitch.execute",
+            "glitch.configure",
+            "healthcheck",
+            "trigger.manual",
+            "target.serial",
+        ),
+        max_confidence=0.97,
     )

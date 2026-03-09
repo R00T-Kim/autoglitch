@@ -77,6 +77,21 @@ hardware:
     - /dev/cu.usbserial*
     - /dev/cu.usbmodem*
     probe_timeout_s: 0.25
+  chipwhisperer:
+    scope_name: null
+    serial_number: null
+    id_product: null
+    bitstream: null
+    force_programming: false
+    prog_speed_hz: 10000000
+    default_setup: true
+    glitch_mode: voltage
+    glitch_output: glitch_only
+    trigger_src: manual
+    target_serial_port: null
+    target_baudrate: null
+    target_timeout: null
+    capture_timeout_s: 0.25
 glitch:
   parameters:
     width:
@@ -112,6 +127,10 @@ safety:
   auto_throttle: true
 plugins:
   manifest_dirs: []
+components:
+  observer: basic-observer
+  classifier: rule-classifier
+  mapper: primitive-mapper
 ai:
   mode: 'off'
   provider: local
@@ -178,3 +197,18 @@ recovery:
   circuit_breaker:
     failure_threshold: 5
     recovery_timeout_s: 10.0
+benchmark:
+  enabled: false
+  benchmark_id: null
+  task: det_fault
+  backends: []
+  operator: null
+  board_id: null
+  session_id: null
+lab:
+  operator: null
+  board_id: null
+  session_id: null
+  wiring_profile: null
+  board_prep_profile: null
+  power_profile: null

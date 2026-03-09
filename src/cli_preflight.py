@@ -1,4 +1,5 @@
 """HIL preflight helpers for the AUTOGLITCH CLI."""
+
 from __future__ import annotations
 
 import argparse
@@ -50,7 +51,6 @@ def hil_preflight_command(
         raise SystemExit(2)
 
 
-
 def run_hil_preflight_for_args(
     args: argparse.Namespace,
     *,
@@ -66,7 +66,9 @@ def run_hil_preflight_for_args(
         return None
 
     serial_cfg = hw_cfg.get("serial", {}) if isinstance(hw_cfg.get("serial", {}), dict) else {}
-    preflight_cfg = serial_cfg.get("preflight", {}) if isinstance(serial_cfg.get("preflight", {}), dict) else {}
+    preflight_cfg = (
+        serial_cfg.get("preflight", {}) if isinstance(serial_cfg.get("preflight", {}), dict) else {}
+    )
     enabled = bool(preflight_cfg.get("enabled", True))
     if not enabled and not force:
         return None
@@ -107,7 +109,9 @@ def run_hil_preflight_for_args(
             safe_params=safe_params,
             probe_trials=probe_trials,
             thresholds=thresholds,
-            target_name=str(config_payload.get("target", {}).get("name", getattr(args, "target", "unknown"))),
+            target_name=str(
+                config_payload.get("target", {}).get("name", getattr(args, "target", "unknown"))
+            ),
             hardware_mode=mode,
         )
     finally:

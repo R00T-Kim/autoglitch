@@ -1,4 +1,5 @@
 """Reinforcement Learning 기반 글리치 파라미터 탐색."""
+
 from __future__ import annotations
 
 import logging
@@ -53,7 +54,9 @@ class GlitchEnv:
             if step > 0:
                 value = round(value / step) * step
 
-            if name == "repeat" or all(isinstance(spec.get(k), int) for k in ("min", "max") if k in spec):
+            if name == "repeat" or all(
+                isinstance(spec.get(k), int) for k in ("min", "max") if k in spec
+            ):
                 values[name] = int(round(value))
             else:
                 values[name] = float(value)
@@ -103,7 +106,9 @@ class RLOptimizer(BaseOptimizer):
             action = self._env.sample_action()
         else:
             noise_scale = max(0.05, min(0.4, 1.0 - self.learning_rate * 1000.0))
-            action = self._policy_mean + self._rng.normal(0.0, noise_scale, size=self._policy_mean.shape)
+            action = self._policy_mean + self._rng.normal(
+                0.0, noise_scale, size=self._policy_mean.shape
+            )
             action = np.clip(action, -1.0, 1.0)
 
         return self._env.action_to_params(action)

@@ -73,7 +73,9 @@ def test_controller_glitch_command_sequence() -> None:
 
 
 def test_controller_rejects_out_of_range() -> None:
-    cfg = RPiBridgeConfig(control_port="/dev/null", max_repeat=4, max_width_us=100.0, max_offset_us=1000.0)
+    cfg = RPiBridgeConfig(
+        control_port="/dev/null", max_repeat=4, max_width_us=100.0, max_offset_us=1000.0
+    )
     gpio = FakeGPIO()
     controller = RPiGlitchController(config=cfg, gpio_backend=gpio)
 
@@ -86,11 +88,10 @@ def test_controller_rejects_out_of_range() -> None:
         raise AssertionError("expected ValueError")
 
 
-
 def test_controller_handles_typed_hello() -> None:
     cfg = RPiBridgeConfig(control_port="/dev/null", glitch_pin=18)
     gpio = FakeGPIO()
     controller = RPiGlitchController(config=cfg, gpio_backend=gpio)
 
     response = controller.handle_line('{"command":"hello"}')
-    assert b'autoglitch.v1' in response
+    assert b"autoglitch.v1" in response

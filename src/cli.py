@@ -1,4 +1,5 @@
 """AUTOGLITCH command line interface."""
+
 from __future__ import annotations
 
 import argparse
@@ -60,6 +61,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 # Entry
 # ---------------------------------------------------------------------------
+
 
 def main() -> None:
     parser = _build_parser()
@@ -161,6 +163,7 @@ def main() -> None:
 # ---------------------------------------------------------------------------
 # Core campaign execution
 # ---------------------------------------------------------------------------
+
 
 def _execute_campaign(args: argparse.Namespace) -> dict[str, Any]:
     return execute_campaign(
@@ -268,6 +271,7 @@ def _validate_hil_rc_cmd(args: argparse.Namespace) -> None:
 # Agentic / Repro suite / Knowledge utilities
 # ---------------------------------------------------------------------------
 
+
 def _run_agentic_cmd(args: argparse.Namespace) -> None:
     if getattr(args, "ai_mode", None) is None:
         args.ai_mode = "agentic_enforced"
@@ -277,6 +281,7 @@ def _run_agentic_cmd(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 # Extracted command wrappers
 # ---------------------------------------------------------------------------
+
 
 def _run_benchmark(args: argparse.Namespace) -> None:
     run_benchmark_command(args, run_single_campaign=_run_single_campaign)
@@ -344,6 +349,7 @@ def _doctor_hardware_cmd(args: argparse.Namespace) -> None:
         load_run_config=_load_run_config,
         validate_runtime_config=_validate_runtime_config,
     )
+
 
 # ---------------------------------------------------------------------------
 # Validation / Plugin / Replay

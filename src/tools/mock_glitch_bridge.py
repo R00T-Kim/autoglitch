@@ -5,6 +5,7 @@ This helper exposes a pseudo-terminal (PTY) that accepts both the legacy line pr
 ``TypedSerialCommandHardware``. It enables serial-mode end-to-end testing without physical
 hardware.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -172,7 +173,9 @@ class MockGlitchBridge:
                     "error_code": result.error_code,
                 }
             ).encode("utf-8")
-        return json.dumps({"status": "error", "message": f"unknown command: {command}"}).encode("utf-8")
+        return json.dumps({"status": "error", "message": f"unknown command: {command}"}).encode(
+            "utf-8"
+        )
 
     def serve_once(self, timeout_s: float = 0.2) -> int:
         self.open_pty()
@@ -247,7 +250,9 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--response-delay-s", type=float, default=0.0)
     parser.add_argument("--duration-s", type=float, default=None)
-    parser.add_argument("--port-file", default=None, help="optional file to store generated PTY path")
+    parser.add_argument(
+        "--port-file", default=None, help="optional file to store generated PTY path"
+    )
     return parser
 
 

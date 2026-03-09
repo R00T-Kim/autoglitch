@@ -1,4 +1,5 @@
 """HIL preflight helpers for serial hardware stability checks."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -54,9 +55,7 @@ def run_hil_preflight(
 
     latency_mean_s = float(np.mean(response_times)) if response_times else 0.0
     latency_p95_s = (
-        float(np.percentile(np.array(response_times, dtype=float), 95))
-        if response_times
-        else 0.0
+        float(np.percentile(np.array(response_times, dtype=float), 95)) if response_times else 0.0
     )
     latency_max_s = float(max(response_times)) if response_times else 0.0
 

@@ -27,13 +27,25 @@ def _base_config() -> dict:
             "binding_file": "configs/local/hardware.yaml",
             "profile_dirs": [],
             "target": {"port": None, "baudrate": 115200, "timeout": 0.25},
-            "serial": {"io_mode": "sync", "keep_open": True, "reconnect_attempts": 1, "reconnect_backoff_s": 0.0},
-            "discovery": {"enabled": True, "candidate_ports": ["/dev/ttyUSB_FAKE"], "port_globs": [], "probe_timeout_s": 0.25},
+            "serial": {
+                "io_mode": "sync",
+                "keep_open": True,
+                "reconnect_attempts": 1,
+                "reconnect_backoff_s": 0.0,
+            },
+            "discovery": {
+                "enabled": True,
+                "candidate_ports": ["/dev/ttyUSB_FAKE"],
+                "port_globs": [],
+                "probe_timeout_s": 0.25,
+            },
         },
     }
 
 
-def test_resolve_hardware_prefers_local_binding_even_when_default_mode_is_mock(tmp_path: Path) -> None:
+def test_resolve_hardware_prefers_local_binding_even_when_default_mode_is_mock(
+    tmp_path: Path,
+) -> None:
     config = _base_config()
     config["hardware"]["mode"] = "mock"
     config["hardware"]["binding_file"] = str(tmp_path / "hardware.yaml")
@@ -59,12 +71,14 @@ def test_detect_hardware_returns_typed_candidate(monkeypatch: pytest.MonkeyPatch
     config = _base_config()
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
-        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
-            "confidence": 0.99,
-            "reason": "typed_protocol_handshake_ok",
-            "protocol": "autoglitch.v1",
-            "identity": {"port": port},
-        }),
+        classmethod(
+            lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
+                "confidence": 0.99,
+                "reason": "typed_protocol_handshake_ok",
+                "protocol": "autoglitch.v1",
+                "identity": {"port": port},
+            }
+        ),
     )
     monkeypatch.setattr(
         "src.hardware.serial_hardware.SerialCommandHardware.probe",
@@ -78,16 +92,20 @@ def test_detect_hardware_returns_typed_candidate(monkeypatch: pytest.MonkeyPatch
     assert candidates[0].binding.location == "/dev/ttyUSB_FAKE"
 
 
-def test_resolve_hardware_rejects_ambiguous_high_confidence(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_hardware_rejects_ambiguous_high_confidence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _base_config()
     config["hardware"]["discovery"]["candidate_ports"] = ["/dev/ttyUSB_A", "/dev/ttyUSB_B"]
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
-        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
-            "confidence": 0.99,
-            "reason": "typed_protocol_handshake_ok",
-            "identity": {"port": port},
-        }),
+        classmethod(
+            lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
+                "confidence": 0.99,
+                "reason": "typed_protocol_handshake_ok",
+                "identity": {"port": port},
+            }
+        ),
     )
     monkeypatch.setattr(
         "src.hardware.serial_hardware.SerialCommandHardware.probe",
@@ -98,7 +116,9 @@ def test_resolve_hardware_rejects_ambiguous_high_confidence(monkeypatch: pytest.
         resolve_hardware(config=config, explicit_adapter=None, explicit_port=None, seed=7)
 
 
-def test_doctor_hardware_reports_missing_binding_when_no_candidates(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_doctor_hardware_reports_missing_binding_when_no_candidates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _base_config()
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
@@ -156,9 +176,12 @@ def test_doctor_hardware_degrades_when_healthcheck_fails(
 
 def test_default_registry_loads_official_profiles() -> None:
     registry = build_default_registry()
-    assert {"mock-hardware", "serial-command-hardware", "serial-json-hardware"}.issubset(
-        set(registry.adapter_ids())
-    )
+    assert {
+        "mock-hardware",
+        "serial-command-hardware",
+        "serial-json-hardware",
+        "chipwhisperer-hardware",
+    }.issubset(set(registry.adapter_ids()))
 
 
 def test_detect_hardware_prefers_preferred_adapter(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -196,17 +219,21 @@ def test_detect_hardware_prefers_preferred_adapter(monkeypatch: pytest.MonkeyPat
     assert legacy_calls == []
 
 
-def test_resolve_hardware_rejects_missing_required_capabilities(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_hardware_rejects_missing_required_capabilities(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     config = _base_config()
     config["hardware"]["required_capabilities"] = ["nonexistent.capability"]
     monkeypatch.setattr(
         "src.hardware.typed_serial_hardware.TypedSerialCommandHardware.probe",
-        classmethod(lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
-            "confidence": 0.99,
-            "reason": "typed_protocol_handshake_ok",
-            "protocol": "autoglitch.v1",
-            "capabilities": ["glitch.execute"],
-        }),
+        classmethod(
+            lambda cls, *, port, baudrate, timeout, serial_factory=None: {  # noqa: ARG005
+                "confidence": 0.99,
+                "reason": "typed_protocol_handshake_ok",
+                "protocol": "autoglitch.v1",
+                "capabilities": ["glitch.execute"],
+            }
+        ),
     )
     monkeypatch.setattr(
         "src.hardware.serial_hardware.SerialCommandHardware.probe",
@@ -227,8 +254,12 @@ def test_hardware_binding_lock_blocks_duplicate_access(tmp_path: Path) -> None:
     lock_path = hardware_lock_path(binding, lock_dir=tmp_path)
     assert lock_path is not None
 
-    with hardware_binding_lock(binding, lock_dir=tmp_path), pytest.raises(
-        RuntimeError,
-        match="already in use",
-    ), hardware_binding_lock(binding, lock_dir=tmp_path, timeout_s=0.0):
+    with (
+        hardware_binding_lock(binding, lock_dir=tmp_path),
+        pytest.raises(
+            RuntimeError,
+            match="already in use",
+        ),
+        hardware_binding_lock(binding, lock_dir=tmp_path, timeout_s=0.0),
+    ):
         raise AssertionError("lock should not be re-acquired")

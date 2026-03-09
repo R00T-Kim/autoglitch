@@ -2,7 +2,7 @@
 
 > **"LLM이 못하는 하드웨어 해킹을 AI가 하게 만드는"** closed-loop 자동 글리칭 시스템
 
-## 최근 소프트웨어 업데이트 (2026-03-07)
+## 최근 소프트웨어 업데이트 (2026-03-09)
 
 - **Strict Config + Config v3 기준선**: strict mode는 `config_version: 3`를 요구하고 `recovery`/`ext_offset` + hardware binding/discovery 필드를 포함
 - **Serial runtime hardening**: `sync`/`async` I/O, persistent session, reconnect 정책, event-loop-safe sync wrapper
@@ -14,7 +14,10 @@
 - **범용 하드웨어 프레임워크**: transport-agnostic registry + official hardware profiles + local binding store(`configs/local/hardware.yaml`)
 - **장비 온보딩 명령**: `detect-hardware` / `setup-hardware` / `doctor-hardware`
 - **프로토콜 이중화**: typed serial `autoglitch.v1`(`serial-json-hardware`) + legacy text fallback(`serial-command-hardware`)
-- **품질 게이트 정렬**: local/CI 기준이 `python -m compileall src tests`, `ruff check src tests`, `mypy src`, `pytest -q`로 일치하고, 최신 로컬 검증 결과는 `113 passed, 3 skipped`
+- **첫 외부 backend 통합**: `chipwhisperer-hardware`를 통해 ChipWhisperer를 공통 hardware framework에 연결
+- **backend-aware benchmark**: benchmark가 backend × algorithm 조합 비교와 compare report를 생성
+- **artifact bundle**: 각 run이 reproducibility bundle(`bundles/...`)을 생성하고 bundle completeness를 계산
+- **품질 게이트 정렬**: local/CI 기준이 `python -m compileall src tests`, `ruff check src tests`, `mypy src`, `pytest -q`로 일치하고, 최신 로컬 검증 결과는 `127 passed`
 
 ---
 

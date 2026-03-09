@@ -1,8 +1,10 @@
 """실험 로그 기록/요약 유틸리티."""
+
 from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 from collections.abc import Iterable
 from dataclasses import asdict, is_dataclass
 from datetime import datetime
@@ -11,7 +13,13 @@ from typing import Any, cast
 
 import numpy as np
 
-from ..types import CampaignResult, CampaignSummaryPayload, RunManifestPayload, TrialResult
+from ..types import (
+    ArtifactBundlePayload,
+    CampaignResult,
+    CampaignSummaryPayload,
+    RunManifestPayload,
+    TrialResult,
+)
 
 
 class ExperimentLogger:
@@ -34,24 +42,35 @@ class ExperimentLogger:
         output_dir: str = "experiments/results",
         mlflow_info: dict[str, Any] | None = None,
         optimizer_info: dict[str, Any] | None = None,
+        component_plugins: dict[str, str] | None = None,
+        artifact_bundle: str | None = None,
+        bundle_manifest: str | None = None,
+        benchmark: dict[str, Any] | None = None,
     ) -> Path:
         target_dir = Path(output_dir)
         target_dir.mkdir(parents=True, exist_ok=True)
 
         summary_path = target_dir / f"{campaign.campaign_id}_{self.run_id}.json"
         runtime_fingerprint = campaign.config.get("_runtime_fingerprint", {})
-        optimizer_cfg = campaign.config.get("optimizer", {}) if isinstance(campaign.config, dict) else {}
+        optimizer_cfg = (
+            campaign.config.get("optimizer", {}) if isinstance(campaign.config, dict) else {}
+        )
         bo_cfg = optimizer_cfg.get("bo", {}) if isinstance(optimizer_cfg, dict) else {}
         ai_cfg = campaign.config.get("ai", {}) if isinstance(campaign.config, dict) else {}
-        run_tag = campaign.config.get("run_tag") or campaign.config.get("logging", {}).get("run_tag")
+        run_tag = campaign.config.get("run_tag") or campaign.config.get("logging", {}).get(
+            "run_tag"
+        )
+        planner_backend = str(campaign.config.get("_planner_backend", "disabled"))
+        advisor_backend = str(campaign.config.get("_advisor_backend", "disabled"))
         payload: CampaignSummaryPayload = {
-            "schema_version": 6,
+            "schema_version": 8,
             "campaign_id": campaign.campaign_id,
             "run_id": self.run_id,
             "run_tag": run_tag,
             "n_trials": campaign.n_trials,
             "success_rate": campaign.success_rate,
             "primitive_repro_rate": campaign.primitive_repro_rate,
+            "time_to_first_valid_fault": campaign.time_to_first_valid_fault,
             "time_to_first_primitive": campaign.time_to_first_primitive,
             "runtime": {
                 "total_seconds": campaign.runtime_total_seconds,
@@ -63,6 +82,9 @@ class ExperimentLogger:
                 "max_seconds": campaign.latency_max_seconds,
             },
             "error_breakdown": campaign.error_breakdown,
+            "execution_status_breakdown": campaign.execution_status_breakdown,
+            "infra_failure_count": campaign.infra_failure_count,
+            "blocked_count": campaign.blocked_count,
             "fault_distribution": {
                 fault.name: count for fault, count in campaign.fault_distribution.items()
             },
@@ -88,6 +110,8 @@ class ExperimentLogger:
                 "event_count": len(campaign.planner_events),
                 "policy_reject_count": campaign.policy_reject_count,
                 "agentic_interventions": campaign.agentic_interventions,
+                "planner_backend": planner_backend,
+                "advisor_backend": advisor_backend,
             },
             "decision_trace": campaign.planner_events,
             "training": {
@@ -97,6 +121,10 @@ class ExperimentLogger:
             },
             "optimizer_runtime": optimizer_info or {"enabled": False},
             "mlflow": mlflow_info or {"enabled": False},
+            "component_plugins": dict(component_plugins or {}),
+            "artifact_bundle": artifact_bundle,
+            "bundle_manifest": bundle_manifest,
+            "benchmark": dict(benchmark or {}),
         }
 
         with summary_path.open("w", encoding="utf-8") as handle:
@@ -135,6 +163,183 @@ class ExperimentLogger:
 
         return path
 
+    def bundle_dir(
+        self,
+        *,
+        output_dir: str = "experiments/results",
+        benchmark_id: str | None = None,
+        target: str | None = None,
+        backend: str | None = None,
+    ) -> Path:
+        target_dir = Path(output_dir) / "bundles"
+        if benchmark_id:
+            target_dir = target_dir / _safe_path_component(benchmark_id)
+        if target:
+            target_dir = target_dir / _safe_path_component(target)
+        if backend:
+            target_dir = target_dir / _safe_path_component(backend)
+        return target_dir / _safe_path_component(self.run_id)
+
+    def write_artifact_bundle(
+        self,
+        *,
+        summary_path: Path,
+        manifest_path: Path,
+        log_path: Path,
+        output_dir: str = "experiments/results",
+        preflight_report: str | Path | dict[str, Any] | None = None,
+        hardware_resolution: dict[str, Any] | None = None,
+        benchmark: dict[str, Any] | None = None,
+        lab: dict[str, Any] | None = None,
+        component_plugins: dict[str, str] | None = None,
+        rc_report: str | Path | dict[str, Any] | None = None,
+    ) -> ArtifactBundlePayload:
+        benchmark_payload = dict(benchmark or {})
+        hardware_payload = dict(hardware_resolution or {})
+        target_name = (
+            str(benchmark_payload.get("target", "")).strip()
+            or str(hardware_payload.get("target", "")).strip()
+            or None
+        )
+        backend_name = (
+            str(benchmark_payload.get("backend", "")).strip()
+            or str(hardware_payload.get("binding", {}).get("adapter_id", "")).strip()
+            or None
+        )
+        bundle_dir = self.bundle_dir(
+            output_dir=output_dir,
+            benchmark_id=str(benchmark_payload.get("benchmark_id", "")).strip() or None,
+            target=target_name,
+            backend=backend_name,
+        )
+        bundle_dir.mkdir(parents=True, exist_ok=True)
+
+        files: dict[str, str] = {
+            "campaign_summary": str(
+                self._copy_into_bundle(summary_path, bundle_dir / "campaign_summary.json")
+            ),
+            "run_manifest": str(
+                self._copy_into_bundle(manifest_path, bundle_dir / "run_manifest.json")
+            ),
+            "trial_log": str(
+                self._copy_into_bundle(
+                    log_path,
+                    bundle_dir / "trial_log.jsonl",
+                    allow_missing=True,
+                )
+            ),
+        }
+
+        if hardware_payload:
+            hardware_path = bundle_dir / "hardware_resolution.json"
+            hardware_path.write_text(
+                json.dumps(hardware_payload, indent=2, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            files["hardware_resolution"] = str(hardware_path)
+
+        preflight_path = _materialize_optional_json(
+            bundle_dir=bundle_dir,
+            filename="preflight.json",
+            payload=preflight_report,
+        )
+        if preflight_path is not None:
+            files["preflight"] = str(preflight_path)
+
+        rc_path = _materialize_optional_json(
+            bundle_dir=bundle_dir,
+            filename="rc_validation.json",
+            payload=rc_report,
+        )
+        if rc_path is not None:
+            files["rc_validation"] = str(rc_path)
+
+        metadata_path = bundle_dir / "metadata.json"
+        metadata_path.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "created_at": datetime.now().isoformat(),
+                    "run_id": self.run_id,
+                    "benchmark": benchmark_payload,
+                    "lab": dict(lab or {}),
+                    "component_plugins": dict(component_plugins or {}),
+                    "hardware_resolution": hardware_payload,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
+        files["metadata"] = str(metadata_path)
+
+        notes_path = bundle_dir / "operator_notes.md"
+        if not notes_path.exists():
+            notes_path.write_text(
+                "\n".join(
+                    [
+                        "# Operator Notes",
+                        "",
+                        "- board changes:",
+                        "- wiring observations:",
+                        "- power supply notes:",
+                        "- anomalies:",
+                    ]
+                )
+                + "\n",
+                encoding="utf-8",
+            )
+        files["operator_notes"] = str(notes_path)
+
+        completeness = _bundle_completeness(files)
+        manifest_payload = {
+            "schema_version": 1,
+            "created_at": datetime.now().isoformat(),
+            "run_id": self.run_id,
+            "bundle_dir": str(bundle_dir),
+            "files": files,
+            "completeness": completeness,
+        }
+        bundle_manifest_path = bundle_dir / "bundle_manifest.json"
+        bundle_manifest_path.write_text(
+            json.dumps(manifest_payload, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        files["bundle_manifest"] = str(bundle_manifest_path)
+
+        for summary_target in (summary_path, bundle_dir / "campaign_summary.json"):
+            _patch_json_file(
+                summary_target,
+                {
+                    "artifact_bundle": str(bundle_dir),
+                    "bundle_manifest": str(bundle_manifest_path),
+                },
+            )
+
+        return {
+            "schema_version": 1,
+            "created_at": datetime.now().isoformat(),
+            "run_id": self.run_id,
+            "bundle_dir": str(bundle_dir),
+            "manifest": str(bundle_manifest_path),
+            "completeness": completeness,
+            "files": files,
+        }
+
+    @staticmethod
+    def _copy_into_bundle(
+        source: Path,
+        destination: Path,
+        *,
+        allow_missing: bool = False,
+    ) -> Path:
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        if allow_missing and not source.exists():
+            destination.write_text("", encoding="utf-8")
+            return destination
+        shutil.copy2(source, destination)
+        return destination
+
 
 def _to_jsonable(value: Any) -> Any:
     if is_dataclass(value) and not isinstance(value, type):
@@ -159,3 +364,56 @@ def _to_jsonable(value: Any) -> Any:
         return value.isoformat()
 
     return value
+
+
+def _patch_json_file(path: Path, updates: dict[str, Any]) -> None:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"expected JSON object in {path}")
+    payload.update(_to_jsonable(updates))
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _materialize_optional_json(
+    *,
+    bundle_dir: Path,
+    filename: str,
+    payload: str | Path | dict[str, Any] | None,
+) -> Path | None:
+    if payload is None:
+        return None
+    destination = bundle_dir / filename
+    if isinstance(payload, dict):
+        destination.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        return destination
+    source = Path(payload)
+    if not source.exists():
+        return None
+    shutil.copy2(source, destination)
+    return destination
+
+
+def _bundle_completeness(files: dict[str, str]) -> dict[str, bool]:
+    required_files = (
+        "campaign_summary",
+        "run_manifest",
+        "trial_log",
+        "metadata",
+        "hardware_resolution",
+        "operator_notes",
+    )
+    required_ok = all(key in files for key in required_files)
+    research_complete = required_ok and "preflight" in files
+    rc_complete = research_complete and "rc_validation" in files
+    return {
+        "required_ok": required_ok,
+        "research_complete": research_complete,
+        "rc_complete": rc_complete,
+    }
+
+
+def _safe_path_component(value: str) -> str:
+    cleaned = "".join(
+        char if char.isalnum() or char in {"-", "_", "."} else "_" for char in value.strip()
+    )
+    return cleaned or "unknown"

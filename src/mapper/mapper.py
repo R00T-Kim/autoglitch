@@ -1,4 +1,5 @@
 """Fault-to-Primitive 매퍼"""
+
 from __future__ import annotations
 
 from ..types import ExploitPrimitive, ExploitPrimitiveType, FaultClass, Observation

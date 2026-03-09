@@ -134,6 +134,57 @@ def test_strict_schema_accepts_agentic_config_defaults() -> None:
     assert errors == []
 
 
+def test_strict_schema_accepts_component_plugin_selection() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["components"] = {
+        "observer": "basic-observer",
+        "classifier": "rule-classifier",
+        "mapper": "primitive-mapper",
+    }
+
+    errors = validate_config(config, mode="strict")
+    assert errors == []
+
+
+def test_strict_schema_accepts_chipwhisperer_benchmark_and_lab_sections() -> None:
+    config = _merged_default()
+    config = copy.deepcopy(config)
+    config["hardware"]["adapter"] = "chipwhisperer-hardware"
+    config["hardware"]["chipwhisperer"] = {
+        "scope_name": "Husky",
+        "serial_number": "CW123",
+        "default_setup": True,
+        "glitch_mode": "voltage",
+        "glitch_output": "glitch_only",
+        "trigger_src": "manual",
+        "target_serial_port": "/dev/ttyUSB9",
+        "target_baudrate": 115200,
+        "target_timeout": 1.0,
+        "capture_timeout_s": 0.25,
+    }
+    config["benchmark"] = {
+        "enabled": True,
+        "benchmark_id": "bench_stm32f3",
+        "task": "det_fault",
+        "backends": ["mock-hardware", "chipwhisperer-hardware"],
+        "operator": "alice",
+        "board_id": "board-1",
+        "session_id": "2026-03-09",
+    }
+    config["lab"] = {
+        "operator": "alice",
+        "board_id": "board-1",
+        "session_id": "2026-03-09",
+        "wiring_profile": "wire-a",
+        "board_prep_profile": "prep-a",
+        "power_profile": "psu-a",
+    }
+
+    errors = validate_config(config, mode="strict")
+    assert errors == []
+
+
 def test_strict_schema_rejects_unknown_core_keys() -> None:
     config = _merged_default()
     config = copy.deepcopy(config)

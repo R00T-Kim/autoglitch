@@ -1,4 +1,5 @@
 """Hardware interface abstractions."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -78,12 +79,10 @@ class BaseTarget(ABC):
     """타깃 보드 추상 인터페이스"""
 
     @abstractmethod
-    def connect(self) -> None:
-        ...
+    def connect(self) -> None: ...
 
     @abstractmethod
-    def disconnect(self) -> None:
-        ...
+    def disconnect(self) -> None: ...
 
     @abstractmethod
     def reset(self) -> None:
@@ -105,12 +104,10 @@ class BaseScope(ABC):
     """오실로스코프 추상 인터페이스"""
 
     @abstractmethod
-    def connect(self) -> None:
-        ...
+    def connect(self) -> None: ...
 
     @abstractmethod
-    def configure(self, sample_rate: int, duration: float) -> None:
-        ...
+    def configure(self, sample_rate: int, duration: float) -> None: ...
 
     @abstractmethod
     def capture_waveform(self) -> np.ndarray:

@@ -1,4 +1,5 @@
 """Bayesian Optimization 기반 글리치 파라미터 탐색."""
+
 from __future__ import annotations
 
 import logging
@@ -138,7 +139,9 @@ class BayesianOptimizer(BaseOptimizer):
             raw = self._rng.uniform(lower, upper)
             quantized = self._quantize(name, raw, step, is_int)
             quantized = max(lower, min(upper, float(quantized)))
-            sampled[name] = int(round(quantized)) if (is_int or name == "repeat") else float(quantized)
+            sampled[name] = (
+                int(round(quantized)) if (is_int or name == "repeat") else float(quantized)
+            )
 
         return self._build_params(sampled)
 
@@ -152,7 +155,9 @@ class BayesianOptimizer(BaseOptimizer):
             self._record_timing("fit", time.perf_counter() - started)
             return
 
-        if self._should_try_botorch() and len(self._history) >= max(4, len(self._search_fields) + 1):
+        if self._should_try_botorch() and len(self._history) >= max(
+            4, len(self._search_fields) + 1
+        ):
             try:
                 self._fit_model_botorch()
                 self._backend_in_use = self._resolve_botorch_backend_name()
@@ -294,7 +299,9 @@ class BayesianOptimizer(BaseOptimizer):
         mus, uncertainties = self._predict_heuristic_batch(candidate_vec.reshape(1, -1))
         return float(mus[0]), float(uncertainties[0])
 
-    def _predict_heuristic_batch(self, candidate_matrix: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    def _predict_heuristic_batch(
+        self, candidate_matrix: np.ndarray
+    ) -> tuple[np.ndarray, np.ndarray]:
         assert self._model is not None
 
         xs: np.ndarray = self._model["xs"]
@@ -364,7 +371,9 @@ class BayesianOptimizer(BaseOptimizer):
             matrix[:, idx] = raw.astype(float)
         return matrix
 
-    def _build_botorch_acquisition(self, model, best_reward: float):  # pragma: no cover - optional path
+    def _build_botorch_acquisition(
+        self, model, best_reward: float
+    ):  # pragma: no cover - optional path
         if self.backend_preference == "qnehvi":
             if self.objective_mode != "multi":
                 self._note_backend_event("qnehvi_requested_single_objective_fallback")
@@ -387,7 +396,9 @@ class BayesianOptimizer(BaseOptimizer):
             lower, upper, step, is_int = self._bounds[name]
             quantized = self._quantize(name, float(vector[idx]), step, is_int)
             quantized = max(lower, min(upper, float(quantized)))
-            sampled[name] = int(round(quantized)) if (is_int or name == "repeat") else float(quantized)
+            sampled[name] = (
+                int(round(quantized)) if (is_int or name == "repeat") else float(quantized)
+            )
         return sampled
 
     def _torch_bounds(self):  # pragma: no cover - optional path

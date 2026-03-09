@@ -1,4 +1,5 @@
 """Advisory binding locks for serial hardware usage."""
+
 from __future__ import annotations
 
 import hashlib

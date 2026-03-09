@@ -1,4 +1,5 @@
 """Runtime factory helpers for AUTOGLITCH CLI."""
+
 from __future__ import annotations
 
 import argparse
@@ -7,7 +8,8 @@ from typing import Any
 
 from .hardware import (
     HardwareResolutionError,
-    build_default_registry,
+    build_registry_from_config,
+    normalize_adapter_request,
     resolve_hardware,
 )
 from .logging_viz import MLflowTracker
@@ -16,13 +18,13 @@ from .optimizer import BayesianOptimizer, RLOptimizer, SB3Optimizer
 
 def _create_mlflow_tracker(config: dict[str, Any]) -> MLflowTracker:
     logging_cfg = config.get("logging", {})
-    nested_mlflow_cfg = logging_cfg.get("mlflow", {}) if isinstance(logging_cfg.get("mlflow", {}), dict) else {}
+    nested_mlflow_cfg = (
+        logging_cfg.get("mlflow", {}) if isinstance(logging_cfg.get("mlflow", {}), dict) else {}
+    )
 
     enabled = bool(nested_mlflow_cfg.get("enabled", False))
     tracking_uri = (
-        nested_mlflow_cfg.get("tracking_uri")
-        or logging_cfg.get("mlflow_tracking_uri")
-        or "mlruns"
+        nested_mlflow_cfg.get("tracking_uri") or logging_cfg.get("mlflow_tracking_uri") or "mlruns"
     )
     experiment_name = str(nested_mlflow_cfg.get("experiment_name", "autoglitch"))
 
@@ -86,17 +88,25 @@ def _create_optimizer(
     )
 
 
-
 def _create_hardware(args: argparse.Namespace, config: dict[str, Any], seed: int):
-    registry = build_default_registry()
     runtime_config = copy.deepcopy(config)
+    registry = build_registry_from_config(runtime_config)
     hardware_cfg = runtime_config.setdefault("hardware", {})
     target_cfg = hardware_cfg.setdefault("target", {})
     serial_cfg = hardware_cfg.setdefault("serial", {})
+    chipwhisperer_cfg = hardware_cfg.setdefault("chipwhisperer", {})
+    requested_adapter = normalize_adapter_request(
+        getattr(args, "hardware", None) or hardware_cfg.get("adapter") or hardware_cfg.get("mode")
+    )
     if getattr(args, "serial_timeout", None) is not None:
         target_cfg["timeout"] = float(args.serial_timeout)
     if getattr(args, "serial_io", None) is not None:
         serial_cfg["io_mode"] = str(args.serial_io)
+    if (
+        getattr(args, "serial_port", None) is not None
+        and requested_adapter == "chipwhisperer-hardware"
+    ):
+        chipwhisperer_cfg["target_serial_port"] = str(args.serial_port)
     try:
         resolution = resolve_hardware(
             config=runtime_config,

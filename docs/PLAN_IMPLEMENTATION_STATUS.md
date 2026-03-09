@@ -1,4 +1,110 @@
-# Plan Implementation Status (2026-03-07)
+# Plan Implementation Status (2026-03-09)
+
+## ✅ Latest snapshot (2026-03-09)
+
+- `ruff check src tests` ✅
+- `mypy src` ✅
+- `pytest -q` ✅ (`127 passed`)
+
+아래의 이전 phase 기록은 **히스토리**이며, 최신 구현 상태는 아래 Phase 10 항목을 우선 본다.
+
+## ✅ Implemented in this cycle (Phase 10, 2026-03-09)
+
+### 1) Backend-aware benchmark
+- `benchmark`가 이제 algorithm-only 비교가 아니라 **backend × algorithm** 비교를 수행한다.
+- 새 benchmark 메타데이터:
+  - `benchmark_id`
+  - `benchmark_task`
+  - `operator`
+  - `board_id`
+  - `session_id`
+  - `wiring_profile`
+  - `board_prep_profile`
+  - `power_profile`
+- benchmark 결과는:
+  - `benchmark_*.json`
+  - `comparison_*.json`
+  - per-run artifact bundle
+  로 저장된다.
+
+### 2) Artifact bundle generator
+- 모든 run은 이제 `experiments/results/bundles/...` 아래에 bundle을 생성할 수 있다.
+- bundle에는 최소 아래가 포함된다.
+  - campaign summary
+  - run manifest
+  - trial log
+  - metadata
+  - hardware resolution
+  - operator notes
+  - optional preflight / RC validation
+- bundle completeness:
+  - `required_ok`
+  - `research_complete`
+  - `rc_complete`
+
+### 3) ChipWhisperer backend integration
+- `chipwhisperer-hardware` adapter/profile 추가
+- detect / setup / doctor / run 경로에 통합
+- `hardware.chipwhisperer.*` strict schema 추가
+- ChipWhisperer 실행 시 `--serial-port`는 target UART로 전달될 수 있다.
+
+### 4) Result/report schema uplift
+- campaign summary는 `schema_version: 8`
+- 추가/확장된 핵심 필드:
+  - `time_to_first_valid_fault`
+  - `artifact_bundle`
+  - `bundle_manifest`
+  - `component_plugins`
+  - `benchmark`
+- rerun/benchmark aggregate에도 infra-failure rate, blocked rate, bundle completeness 집계가 포함된다.
+
+## ✅ Implemented in this cycle (Phase 9, 2026-03-08)
+
+### 1) Runtime component plugin wiring
+- Added strict config support for:
+  - `components.observer`
+  - `components.classifier`
+  - `components.mapper`
+- `run` no longer hardcodes observer / classifier / mapper classes.
+- Runtime components are now instantiated from plugin manifests through `PluginRegistry`.
+- Target compatibility is validated before the selected component plugin is used.
+
+### 2) Hardware profile override correctness
+- Added `build_registry_from_config(...)` so all runtime paths can build a registry with `hardware.profile_dirs`.
+- Main hardware creation path now uses the config-aware registry builder.
+- Profile loading now allows later profile directories to override official profiles while inheriting unspecified fields.
+- Added regression coverage proving custom `profile_dirs` can override typed-serial defaults.
+
+### 3) Infra-failure separation from experiment outcomes
+- Added `ExecutionMetadata` to `TrialResult`.
+- Orchestrator now records execution state separately from fault classification:
+  - `ok`
+  - `infra_failure`
+  - `blocked`
+- Infra failures no longer feed optimizer observations or primitive mapping as normal experimental outcomes.
+- Campaign summary schema upgraded to `schema_version: 7` with:
+  - `execution_status_breakdown`
+  - `infra_failure_count`
+  - `blocked_count`
+
+### 4) Backend transparency in summaries
+- Campaign summaries now record:
+  - `agentic.planner_backend`
+  - `agentic.advisor_backend`
+- `run` summaries also expose selected component plugin names.
+
+### 5) Validation
+- Added/updated tests for:
+  - runtime component plugin selection
+  - plugin class instantiation
+  - strict config parsing for component selection
+  - profile-dir hardware override behavior
+  - infra-failure isolation in orchestrator recovery flow
+  - campaign summary / replay summary schema updates
+- Current validation snapshot (2026-03-08):
+  - `ruff check src tests` ✅
+  - `mypy src` ✅
+  - `pytest -q` ✅ (`118 passed, 3 skipped`)
 
 ## ✅ Implemented in this cycle (Phase 1)
 

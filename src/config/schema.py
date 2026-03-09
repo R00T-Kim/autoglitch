@@ -206,6 +206,41 @@ class HardwarePeripheralConfig(_BaseStrictModel):
     port: str | None = None
 
 
+class HardwareChipWhispererConfig(_BaseStrictModel):
+    scope_name: str | None = None
+    serial_number: str | None = None
+    id_product: int | None = None
+    bitstream: str | None = None
+    force_programming: bool = False
+    prog_speed_hz: int = 10_000_000
+    default_setup: bool = True
+    glitch_mode: Literal["voltage", "clock"] = "voltage"
+    glitch_output: Literal[
+        "glitch_only",
+        "enable_only",
+        "clock_xor",
+        "clock_or",
+        "clock_only",
+    ] = "glitch_only"
+    trigger_src: Literal["manual", "ext_single", "ext_continuous", "continuous"] = "manual"
+    target_serial_port: str | None = None
+    target_baudrate: int | None = None
+    target_timeout: float | None = None
+    capture_timeout_s: float = 0.25
+
+    @model_validator(mode="after")
+    def _validate_chipwhisperer(self) -> HardwareChipWhispererConfig:
+        if self.prog_speed_hz <= 0:
+            raise ValueError("prog_speed_hz must be > 0")
+        if self.target_baudrate is not None and self.target_baudrate <= 0:
+            raise ValueError("target_baudrate must be > 0")
+        if self.target_timeout is not None and self.target_timeout <= 0:
+            raise ValueError("target_timeout must be > 0")
+        if self.capture_timeout_s <= 0:
+            raise ValueError("capture_timeout_s must be > 0")
+        return self
+
+
 class HardwareConfig(_BaseStrictModel):
     mode: Literal["mock", "serial", "auto"] = "mock"
     adapter: str = "auto"
@@ -227,12 +262,16 @@ class HardwareConfig(_BaseStrictModel):
     trigger_command: str = ""
     serial: HardwareSerialConfig = Field(default_factory=HardwareSerialConfig)
     discovery: HardwareDiscoveryConfig = Field(default_factory=HardwareDiscoveryConfig)
+    chipwhisperer: HardwareChipWhispererConfig = Field(default_factory=HardwareChipWhispererConfig)
 
     @model_validator(mode="after")
     def _validate_hardware(self) -> HardwareConfig:
         if not self.binding_file:
             raise ValueError("binding_file must not be empty")
-        if self.transport == "virtual" and self.adapter in {"serial-command-hardware", "serial-json-hardware"}:
+        if self.transport == "virtual" and self.adapter in {
+            "serial-command-hardware",
+            "serial-json-hardware",
+        }:
             raise ValueError("serial adapters require non-virtual transport")
         return self
 
@@ -311,6 +350,20 @@ class LoggingConfig(_BaseStrictModel):
 
 class PluginsConfig(_BaseStrictModel):
     manifest_dirs: list[str] = Field(default_factory=list)
+
+
+class ComponentsConfig(_BaseStrictModel):
+    observer: str = "basic-observer"
+    classifier: str = "rule-classifier"
+    mapper: str = "primitive-mapper"
+
+    @model_validator(mode="after")
+    def _validate_components(self) -> ComponentsConfig:
+        for field_name in ("observer", "classifier", "mapper"):
+            value = str(getattr(self, field_name, "")).strip()
+            if not value:
+                raise ValueError(f"{field_name} must not be empty")
+        return self
 
 
 class AIConfig(_BaseStrictModel):
@@ -429,6 +482,25 @@ class ClassifierConfig(_BaseStrictModel):
     fault_classes: list[str] = Field(default_factory=list)
 
 
+class BenchmarkConfig(_BaseStrictModel):
+    enabled: bool = False
+    benchmark_id: str | None = None
+    task: Literal["det_fault", "reset_boot", "sec_check_bypass"] = "det_fault"
+    backends: list[str] = Field(default_factory=list)
+    operator: str | None = None
+    board_id: str | None = None
+    session_id: str | None = None
+
+
+class LabMetadataConfig(_BaseStrictModel):
+    operator: str | None = None
+    board_id: str | None = None
+    session_id: str | None = None
+    wiring_profile: str | None = None
+    board_prep_profile: str | None = None
+    power_profile: str | None = None
+
+
 class AutoglitchConfig(_BaseStrictModel):
     config_version: int = 3
     defaults: list[Any] = Field(default_factory=list)
@@ -440,11 +512,14 @@ class AutoglitchConfig(_BaseStrictModel):
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     plugins: PluginsConfig = Field(default_factory=PluginsConfig)
+    components: ComponentsConfig = Field(default_factory=ComponentsConfig)
     ai: AIConfig = Field(default_factory=AIConfig)
     policy: PolicyConfig = Field(default_factory=PolicyConfig)
     knowledge: KnowledgeConfig = Field(default_factory=KnowledgeConfig)
     classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     recovery: RecoveryConfig = Field(default_factory=RecoveryConfig)
+    benchmark: BenchmarkConfig = Field(default_factory=BenchmarkConfig)
+    lab: LabMetadataConfig = Field(default_factory=LabMetadataConfig)
 
     @field_validator("config_version")
     @classmethod

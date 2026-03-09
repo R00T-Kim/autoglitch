@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -9,6 +10,7 @@ import pytest
 from src.logging_viz import ExperimentLogger
 from src.types import (
     CampaignResult,
+    ExecutionMetadata,
     ExploitPrimitive,
     ExploitPrimitiveType,
     FaultClass,
@@ -42,6 +44,7 @@ def _trial(
         ),
         fault_class=fault_class,
         primitive=ExploitPrimitive(type=primitive_type, confidence=confidence),
+        execution=ExecutionMetadata(status="ok", origin="hardware"),
         timestamp=timestamp,
         metadata={"error_category": "none"},
     )
@@ -81,7 +84,7 @@ def test_campaign_latency_metrics_and_pareto_properties() -> None:
     assert front[0]["trial_id"] == 2
 
 
-def test_campaign_summary_schema_v6_contains_agentic_fields(tmp_path) -> None:
+def test_campaign_summary_schema_v8_contains_execution_and_bundle_fields(tmp_path) -> None:
     start = datetime(2026, 3, 5, 12, 0, 0)
     campaign = CampaignResult(
         campaign_id="campaign_test",
@@ -107,7 +110,11 @@ def test_campaign_summary_schema_v6_contains_agentic_fields(tmp_path) -> None:
             "target": {"name": "STM32F303"},
             "run_tag": "unit",
             "ai": {"mode": "agentic_shadow"},
-            "optimizer": {"bo": {"objective_mode": "multi", "multi_objective_weights": {"reward": 1.0}}},
+            "optimizer": {
+                "bo": {"objective_mode": "multi", "multi_objective_weights": {"reward": 1.0}}
+            },
+            "_planner_backend": "heuristic",
+            "_advisor_backend": "disabled",
             "_runtime_fingerprint": {
                 "config_hash_sha256": "abc",
                 "git_sha": "deadbeef",
@@ -127,10 +134,33 @@ def test_campaign_summary_schema_v6_contains_agentic_fields(tmp_path) -> None:
         output_dir=str(tmp_path),
         mlflow_info={"enabled": False},
         optimizer_info={"enabled": True, "backend_in_use": "heuristic"},
+        component_plugins={
+            "observer": "basic-observer",
+            "classifier": "rule-classifier",
+            "mapper": "primitive-mapper",
+        },
+        benchmark={"benchmark_id": "bench_unit", "task": "det_fault"},
+    )
+    manifest_path = logger.write_run_manifest(
+        campaign.config, output_dir=str(tmp_path), plugin_snapshot=[]
+    )
+    logger.log_path.write_text("", encoding="utf-8")
+    bundle = logger.write_artifact_bundle(
+        summary_path=summary_path,
+        manifest_path=manifest_path,
+        log_path=logger.log_path,
+        output_dir=str(tmp_path),
+        hardware_resolution={
+            "source": "unit-test",
+            "binding": {"adapter_id": "mock-hardware", "location": "mock://local"},
+            "target": "STM32F303",
+        },
+        benchmark={"benchmark_id": "bench_unit", "task": "det_fault", "backend": "mock-hardware"},
+        lab={"operator": "tester", "board_id": "board-1"},
     )
 
     payload = json.loads(summary_path.read_text(encoding="utf-8"))
-    assert payload["schema_version"] == 6
+    assert payload["schema_version"] == 8
     assert payload["runtime"]["throughput_trials_per_second"] > 0
     assert payload["latency"]["mean_seconds"] == pytest.approx(0.15)
     assert payload["pareto_front"]
@@ -140,7 +170,16 @@ def test_campaign_summary_schema_v6_contains_agentic_fields(tmp_path) -> None:
     assert payload["run_tag"] == "unit"
     assert payload["agentic"]["mode"] == "agentic_shadow"
     assert payload["agentic"]["policy_reject_count"] == 1
+    assert payload["agentic"]["planner_backend"] == "heuristic"
+    assert payload["execution_status_breakdown"]["ok"] == 2
+    assert payload["infra_failure_count"] == 0
+    assert payload["time_to_first_valid_fault"] == 2
     assert payload["decision_trace"]
+    assert payload["component_plugins"]["observer"] == "basic-observer"
+    assert payload["artifact_bundle"] == bundle["bundle_dir"]
+    assert payload["bundle_manifest"] == bundle["manifest"]
+    assert payload["benchmark"]["benchmark_id"] == "bench_unit"
+    assert Path(bundle["manifest"]).exists()
 
 
 def test_log_trial_serializes_dataclass_payload_to_jsonl(tmp_path) -> None:

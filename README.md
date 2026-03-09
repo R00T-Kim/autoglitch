@@ -14,14 +14,14 @@ observation/classification, primitive mapping, and reproducibility reporting in 
 **Quick links:** [Highlights](#highlights) · [Quickstart](#quickstart) · [Hardware onboarding](#hardware-onboarding) · [Quality gates](#quality-gates) · [Documentation](#documentation)
 
 > [!IMPORTANT]
-> As of **March 7, 2026**, the software quality gates are green:
+> As of **March 9, 2026**, the software quality gates are green:
 > `python -m compileall src tests`, `ruff check src tests`, `mypy src`, `pytest -q`.
 > The real-hardware RC workflow exists, but **lab evidence is still pending**.
 >
 > Latest local validation snapshot:
 > - `ruff check src tests` ✅
 > - `mypy src` ✅
-> - `pytest -q` ✅ `113 passed, 3 skipped`
+> - `pytest -q` ✅ `127 passed`
 
 > [!NOTE]
 > AUTOGLITCH is a **research-grade alpha**. It is already strong as a software framework and
@@ -35,9 +35,13 @@ observation/classification, primitive mapping, and reproducibility reporting in 
   onboarding commands, health diagnostics, binding-level locks.
 - **Typed serial first**: preferred `autoglitch.v1` JSONL protocol via `serial-json-hardware`, with
   legacy text bridge fallback via `serial-command-hardware`.
+- **External backend baseline**: `chipwhisperer-hardware` is now supported as the first USB backend.
 - **Agentic control path**: planner/policy loop, eval-suite, local knowledge ingest/query utilities.
-- **Reproducibility artifacts**: campaign summary, run manifest, RL reports, eval-suite reports,
-  JSONL trial logs, decision traces.
+- **Runtime-selectable components**: observer / classifier / mapper can now be selected by plugin manifest name.
+- **Reproducibility artifacts**: campaign summary, run manifest, artifact bundle, RL reports,
+  eval-suite reports, JSONL trial logs, decision traces.
+- **Backend benchmark path**: benchmark runs can now compare **backend × algorithm** cells and emit
+  benchmark/comparison reports.
 - **Software quality gates aligned with CI**: local commands and GitHub Actions enforce the same
   repo-wide Ruff, mypy, and pytest checks.
 
@@ -49,9 +53,12 @@ observation/classification, primitive mapping, and reproducibility reporting in 
 | Config validation | ✅ | strict mode requires `config_version: 3`; legacy mode still supported |
 | Hardware onboarding | ✅ | `detect-hardware`, `setup-hardware`, `doctor-hardware` |
 | Serial transport | ✅ | typed `autoglitch.v1` preferred, legacy text fallback maintained |
+| ChipWhisperer backend | ✅ | first external USB backend integrated as `chipwhisperer-hardware` |
 | RL workflow | ✅ | `train-rl`, `eval-rl`, SB3 facade + lite fallback |
 | Agentic workflow | ✅ | `run-agentic`, `planner-step`, `eval-suite`, `kb-ingest`, `kb-query` |
 | HIL preflight / RC workflow | ✅ | `hil-preflight`, `validate-hil-rc` software path is implemented |
+| Artifact bundle | ✅ | every run can emit a reproducibility bundle under `experiments/results/bundles/` |
+| Backend benchmark compare | ✅ | benchmark output now supports backend × algorithm comparison |
 | Full software quality gate | ✅ | compileall + Ruff + mypy + pytest all green |
 | Real-hardware RC evidence | ⏳ | workflow exists, measurement artifacts still need to be attached |
 
@@ -101,6 +108,21 @@ python -m src.cli doctor-hardware --target stm32f3
 python -m src.cli hil-preflight --target stm32f3
 python -m src.cli run --target stm32f3 --require-preflight --trials 100
 ```
+
+### ChipWhisperer flow
+
+```bash
+python -m src.cli detect-hardware --hardware chipwhisperer-hardware --target stm32f3
+python -m src.cli setup-hardware --hardware chipwhisperer-hardware --target stm32f3 --force
+python -m src.cli doctor-hardware --hardware chipwhisperer-hardware --target stm32f3
+python -m src.cli run \
+  --hardware chipwhisperer-hardware \
+  --target stm32f3 \
+  --serial-port /dev/ttyUSB0 \
+  --trials 100
+```
+
+`--serial-port` in this mode is used as the **target UART** for the ChipWhisperer-backed run.
 
 After `setup-hardware`, AUTOGLITCH stores the selected binding in:
 - `configs/local/hardware.yaml`
@@ -189,7 +211,7 @@ Key runtime layers:
 - `src/hardware/framework.py`: public facade for the refactored hardware framework
 - `src/hardware/_framework_*.py`: internal models, adapters, resolution, capability checks, doctor, locks
 - `src/orchestrator/`, `src/optimizer/`, `src/runtime/`, `src/safety/`: core execution pipeline
-- `src/logging_viz/`: trial log, campaign summary, run manifest, tracking helpers
+- `src/logging_viz/`: trial log, campaign summary, run manifest, artifact bundle, tracking helpers
 
 ## Configuration and compatibility
 
@@ -200,6 +222,18 @@ Key runtime layers:
 - official hardware profiles live in `configs/hardware_profiles/*.yaml`
 - default local binding path is `configs/local/hardware.yaml`
 
+### Example component block
+
+```yaml
+components:
+  observer: basic-observer
+  classifier: rule-classifier
+  mapper: primitive-mapper
+```
+
+The runtime now instantiates these components from the plugin registry instead of hardcoded classes.
+Component manifests are target-validated before execution.
+
 ### Example hardware block
 
 ```yaml
@@ -207,7 +241,7 @@ config_version: 3
 
 hardware:
   mode: mock          # mock | serial | auto
-  adapter: auto       # auto | mock-hardware | serial-json-hardware | serial-command-hardware
+  adapter: auto       # auto | mock-hardware | serial-json-hardware | serial-command-hardware | chipwhisperer-hardware
   transport: auto
   profile: auto
   auto_detect: true
@@ -250,15 +284,28 @@ AUTOGLITCH generates structured artifacts for replay and auditability:
 - trial log: `experiments/logs/<run_id>.jsonl`
 - campaign summary: `experiments/results/campaign_*_<run_id>.json`
 - run manifest: `experiments/results/manifest_<run_id>.json`
+- artifact bundle: `experiments/results/bundles/<benchmark_id>/<target>/<backend>/<run_id>/`
 - RL train report: `experiments/results/rl_train_*.json`
 - RL eval report: `experiments/results/rl_eval_*.json`
 - eval-suite report: `experiments/results/eval_suite_*.json`
+- benchmark report: `experiments/results/benchmark_*.json`
+- comparison report: `experiments/results/comparison_*.json`
 - preflight summary: `experiments/results/hil_preflight_*.json`
 - RC validation report: `experiments/results/hil_rc_validation_*.json`
 - agentic trace: `experiments/results/agentic_trace_*.jsonl`
 - knowledge store(default): `data/knowledge/kb.jsonl`
 
 These outputs are backed by typed payload contracts in `src/types.py`.
+
+Campaign summaries now also separate execution health from experiment outcomes:
+- `execution_status_breakdown`
+- `infra_failure_count`
+- `blocked_count`
+- `time_to_first_valid_fault`
+- `agentic.planner_backend`
+- `agentic.advisor_backend`
+- `artifact_bundle`
+- `bundle_manifest`
 
 ## Quality gates
 
@@ -309,6 +356,10 @@ Additional project directories:
 | --- | --- |
 | [`docs/RUNBOOK.md`](docs/RUNBOOK.md) | operational command flow and artifact map |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | module boundaries and runtime design |
+| [`docs/BENCHMARK_SCHEMA.md`](docs/BENCHMARK_SCHEMA.md) | benchmark task/metric schema |
+| [`docs/ARTIFACT_BUNDLE_SCHEMA.md`](docs/ARTIFACT_BUNDLE_SCHEMA.md) | reproducibility bundle schema |
+| [`docs/CHIPWHISPERER_ADAPTER_PLAN.md`](docs/CHIPWHISPERER_ADAPTER_PLAN.md) | ChipWhisperer backend scope/status |
+| [`docs/RESEARCH_POSITIONING.md`](docs/RESEARCH_POSITIONING.md) | research positioning and differentiation |
 | [`docs/SAFETY.md`](docs/SAFETY.md) | safety policy and fail-closed behavior |
 | [`docs/PLUGIN_SDK.md`](docs/PLUGIN_SDK.md) | plugin manifest and extension model |
 | [`docs/PLAN_IMPLEMENTATION_STATUS.md`](docs/PLAN_IMPLEMENTATION_STATUS.md) | what has already been implemented |

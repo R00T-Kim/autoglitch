@@ -1,4 +1,5 @@
 """관측 데이터 수집/특징 추출."""
+
 from __future__ import annotations
 
 import numpy as np

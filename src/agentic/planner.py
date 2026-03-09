@@ -1,4 +1,5 @@
 """Agentic planner that emits structured, policy-verifiable proposals."""
+
 from __future__ import annotations
 
 import hashlib
@@ -30,7 +31,13 @@ class AgenticPlanner:
 
         if snapshot.timeout_rate_window > 0.20:
             changes["optimizer.bo.candidate_pool_size"] = int(
-                max(32, min(512, self._read_config(config, "optimizer.bo.candidate_pool_size", 192) * 0.8))
+                max(
+                    32,
+                    min(
+                        512,
+                        self._read_config(config, "optimizer.bo.candidate_pool_size", 192) * 0.8,
+                    ),
+                )
             )
             changes["optimizer.bo.multi_objective_weights.exploration"] = 0.2
             rationale_parts.append("timeout 높음 -> 탐색 강도 축소")
@@ -45,7 +52,12 @@ class AgenticPlanner:
         if snapshot.primitive_rate_window >= 0.30:
             changes["optimizer.bo.multi_objective_weights.reward"] = 1.2
             changes["experiment.success_threshold"] = float(
-                max(0.2, min(0.95, self._read_config(config, "experiment.success_threshold", 0.3) + 0.05))
+                max(
+                    0.2,
+                    min(
+                        0.95, self._read_config(config, "experiment.success_threshold", 0.3) + 0.05
+                    ),
+                )
             )
             rationale_parts.append("primitive 관측 증가 -> exploit 비중 강화")
 

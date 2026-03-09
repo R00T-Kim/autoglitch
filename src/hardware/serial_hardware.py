@@ -1,4 +1,5 @@
 """Legacy text-protocol serial hardware adapter."""
+
 from __future__ import annotations
 
 import json
@@ -100,7 +101,11 @@ class SerialCommandHardware(BaseHardwareAdapter):
 
         lowered = response.lower()
         reset_detected = (not response) or (b"reset" in lowered) or (b"reboot" in lowered)
-        error_code = 1 if any(token in lowered for token in (b"err", b"fault", b"exception", b"panic")) else None
+        error_code = (
+            1
+            if any(token in lowered for token in (b"err", b"fault", b"exception", b"panic"))
+            else None
+        )
 
         return RawResult(
             serial_output=response,
